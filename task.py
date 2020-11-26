@@ -1,3 +1,4 @@
+
 from mosek.fusion import *
 from lib.functions import *
 import pandapower
@@ -10,7 +11,7 @@ class SOCPTask:
     """
 
     def __init__(self, current_data: GridData, v_range=((0.95 * 12.66e3) ** 2, (1.05 * 12.66e3) ** 2),
-                 f_range=(49.75, 50.25), i_max=100, soc_range=(0.0, 1.0)):
+                 f_range=(49.75, 50.25), i_max=100.0, soc_range=(0.0, 1.0)):
         """
         initialization a fusion model with parameters:
         v_range
@@ -27,7 +28,7 @@ class SOCPTask:
             "v_sqr", 33, Domain.inRange(v_range[0], v_range[1]))
         # sqr of line current
         self.i_sqr = self.model.variable(
-            "i_sqr", current_data.num_lines, Domain.inRange(0, i_max))
+            "i_sqr", current_data.num_lines, Domain.inRange(0.0, i_max))
         # frequent
         # self.frequency = self.model.variable(
         #     "frequency", Domain.inRange(f_range[0], f_range[1]))
@@ -102,10 +103,10 @@ class SOCPTask:
 
         # for MT-free nodes
 
-        st_pin = self.model.constraint(Expr.sub(Expr.add(Expr.mulElm(self.load_shed.pick(current_data.list_in_loadshed.tolist()), current_data.list_Pload.tolist()), self.p_in.pick(
-            current_data.list_in.tolist())), current_data.list_Ppv.tolist()), Domain.equalsTo(0.0))
-        st_qin = self.model.constraint(Expr.sub(Expr.add(Expr.mulElm(self.load_shed.pick(current_data.list_in_loadshed.tolist()), current_data.list_Qload.tolist()), self.q_in.pick(
-            current_data.list_in.tolist())), current_data.list_Qpv.tolist()), Domain.equalsTo(0.0))
+        st_pin = self.model.constraint(Expr.sub(Expr.sub(Expr.add(Expr.mulElm(self.load_shed.pick(current_data.list_in_loadshed.tolist()), current_data.list_Pload.tolist()), self.p_in.pick(
+            current_data.list_in.tolist())), current_data.list_Ppv.tolist()),current_data.list_Pwt.tolist()), Domain.equalsTo(0.0))
+        st_qin = self.model.constraint(Expr.sub(Expr.sub(Expr.add(Expr.mulElm(self.load_shed.pick(current_data.list_in_loadshed.tolist()), current_data.list_Qload.tolist()), self.q_in.pick(
+            current_data.list_in.tolist())), current_data.list_Qpv.tolist()),current_data.list_Qwt.tolist()), Domain.equalsTo(0.0))
 
         # Dist-Flow power constraints
 
@@ -190,12 +191,30 @@ class SOCPTask:
         P_blackout = sum( (1-load_shed) * P_load)
 
         """
-
-        obj_function =Expr.add(Expr.add(Expr.dot(current_data.current_price.tolist()[0],self.p_in.index(0)), Expr.mulElm((current_data.tolist()[0]*np.ones(3)).tolist(),self.p_mt))
-                               ,
-        self.model.objective("obj", ObjectiveSense.Minimize,)
+        
+        obj_function =Expr.add(Expr.add(Expr.add(Expr.mul(current_data.current_price.tolist()[0],self.p_in.index(0)), Expr.sum(Expr.mulElm((current_data.current_price.tolist()[1]*np.ones(3)).tolist(),self.p_mt)))
+                                        ,Expr.mul(current_data.price_loss,Expr.sum(Expr.mulElm(self.i_sqr,current_data.list_r.tolist()))))
+                               ,Expr.mul(current_data.price_blackout,Expr.sum(Expr.mulElm(Expr.sub(np.ones(32).tolist(),self.load_shed),current_data.current_Pload.tolist()))))
+        self.model.objective("obj", ObjectiveSense.Minimize,obj_function)
         pass
-
+    
+    def solve(self):
+        
+        """
+        solve the SOCP 
+        """
+        self.model.writeTask("test.opf")
+        self.model.solve()
+        print(self.model.getProblemStatus())
+        print(self.model.getPrimalSolutionStatus())
+        
+        
+    
+        # v=self.v_sqr.level()
+        # print("\n".join(["v[%d] = %f " % (i,v[i]) for i in range(33)]))
+        pass
+    
+    
     pass
 
 
@@ -203,33 +222,17 @@ if __name__ == "__main__":
     # create data agent
     data_case33 = GridData()
     # set max step
-    max_step = 10
+    max_step = 1
 
-    # for s in range(0,max_step):
-    #     gather current data by moving a step
-    #     data_case33.MakeStep(step=s)
-    #     print(data_case33.SeekNeighbor(2))
-    #     pass
-    data_case33.make_step(7)
-    print(data_case33.current_gridPara)
-    l, r, x, z, i = data_case33.make_matrix(mode="ij_forward")
-    print(l)
-    print(len(l))
-    print(type(l))
-    print(len(l[0]))
-    print(r)
-    print(len(r))
-    print(len(r[0]))
-    print(x)
-    print(len(x))
-    print(len(x[0]))
-    print(z)
-    print(len(z))
-    print(len(z[0]))
-    print(i)
-    print(len(i))
-    print(len(i[0]))
+    for s in range(0,max_step):
+        # gather current data by moving a step
+        print("Step = ",s)
+        data_case33.make_step(step=s)
+        problem = SOCPTask(data_case33)
+        problem.make_constraints(data_case33)
+        problem.make_objective(data_case33)
+        problem.solve()
+        pass
 
-    problem = SOCPTask(data_case33)
-    problem.make_constraints(data_case33)
+   
     pass

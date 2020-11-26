@@ -55,6 +55,13 @@ class GridData:
         self.list_Ppv_MT=np.array([0,np.real(self.current_pv[7]),0])
         self.list_Qpv_MT=np.array([0,np.imag(self.current_pv[7]),0])
         
+        # current P\Q loads
+        
+        self.current_Pload=np.real(self.current_load)
+        self.current_Pload=np.delete(self.current_Pload,0,0)
+        self.current_Qload=np.imag(self.current_load)
+        self.current_Qload=np.delete(self.current_Qload,0,0)
+        
         # lists for MT-free node
         
         self.list_Pload=self.current_load.copy()
@@ -65,15 +72,16 @@ class GridData:
         self.list_Ppv[11]=np.real(self.current_pv[13])
         self.list_Qpv=np.zeros(29)
         self.list_Qpv[11]=np.imag(self.current_pv[13])
+        self.list_Pwt=np.zeros(29)
+        self.list_Pwt[25]=np.real(self.current_wt[27])
+        self.list_Qwt=np.zeros(29)
+        self.list_Qwt[25]=np.imag(self.current_wt[27])
         
         #index for power_in and load_shed variables 
         
         self.list_in=np.arange(0,33,dtype=int)
-        
         self.list_in=np.delete(self.list_in,[0,3,7,21])
-        
         self.list_in_loadshed=np.arange(0,32,dtype=int)
-        
         self.list_in_loadshed=np.delete(self.list_in_loadshed,[2,6,20])
         
         # make a copy of current grid parameters table
@@ -93,8 +101,12 @@ class GridData:
         self.current_gridPara_half_backward=self.current_gridPara_half_backward[
             ~self.current_gridPara_half_backward["line_fault"].isin([True])].reset_index(drop=True)
         
-        #get number of lines alive
+        # get number of lines alive
         self.num_lines=self.current_gridPara_half_forward.shape[0]
+        
+        # get r_line alive
+        self.list_r=self.current_gridPara_half_forward["r"]
+        
         pass
     
     def seek_neighbor(self,node,mode="jk_forward"):
@@ -127,6 +139,7 @@ class GridData:
         """
     
         num_cols=self.current_gridPara_half_forward.shape[0]
+        #print(num_cols)
         
         if mode=="jk_forward":
             find_jk_forward=self.current_gridPara_half_forward[self.current_gridPara_half_forward["node_i"].isin([node])]
@@ -157,8 +170,8 @@ class GridData:
             pass
         
         if mode=="pairs":
-            find_all_ij=self.current_gridPara[self.current_gridPara["node_j"].isin([node])]
-            find_all_ji=self.current_gridPara[self.current_gridPara["node_i"].isin([node])]
+            find_all_ij=self.copy_current_gridPara[self.copy_current_gridPara["node_i"].isin([node])]
+            find_all_ji=self.copy_current_gridPara[self.copy_current_gridPara["node_j"].isin([node])]
             idx_ij=find_all_ij.index
             idx_ji=find_all_ji.index
             mask_row=np.zeros(num_cols*2,dtype=int)
@@ -224,11 +237,13 @@ if __name__=="__main__":
     TEST only
     '''
     d=GridData()
-    d.make_step(7)
+    d.make_step(3)
+    print(d.current_gridPara)
     l,r,x,z,i=d.make_matrix(mode="ij_forward")
     print(l)
     print(d.make_matrix(mode="jk_forward").shape)
     print(d.make_matrix(mode="pairs").shape)
     print(d.list_in_loadshed)
     print(type(d.current_price.tolist()[0]))
+    print(d.list_r.tolist())
  
