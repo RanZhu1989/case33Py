@@ -1,10 +1,10 @@
-
 from mosek.fusion import *
 from lib.functions import *
 import pandapower
 
 
 class SOCPTask:
+
     """
     class of the optimization problem modeled with fusion in normal and slight fault
     in this class, the power flow is modeled as Dist-Flow, which will be a SOCP optimization problem
@@ -28,7 +28,7 @@ class SOCPTask:
             "v_sqr", 33, Domain.inRange(v_range[0], v_range[1]))
         # sqr of line current
         self.i_sqr = self.model.variable(
-            "i_sqr", current_data.num_lines, Domain.inRange(0.0, i_max))
+            "i_sqr", current_data.num_lines, Domain.inRange(0.0, i_max ** 2))
         # frequent
         # self.frequency = self.model.variable(
         #     "frequency", Domain.inRange(f_range[0], f_range[1]))
@@ -61,7 +61,7 @@ class SOCPTask:
         # inject activate & reactivate power
         self.p_in = self.model.variable("p_in", 33)
         self.q_in = self.model.variable("q_in", 33)
-       
+
         # big M
         self.bigM = 50
 
@@ -82,7 +82,7 @@ class SOCPTask:
         # set mask matrix for topological constraints in pairs mode
         self.mask_matrix_pairs = current_data.make_matrix(mode="pairs")
 
-        # set the mask matrix "root-free" in pairs mode
+        # set the mask matrix "root-free" in pairs modet
         self.mask_matrix_pairs_rootfree = np.delete(
             self.mask_matrix_pairs, 0, 0)
 
@@ -96,17 +96,27 @@ class SOCPTask:
 
         # for MT-installed nodes
 
-        st_mt_pin = self.model.constraint(Expr.sub(Expr.add(Expr.sub(self.p_mt, Expr.mulElm(self.load_shed.pick([4, 8, 22]), current_data.list_Pload_MT.tolist(
-        ))), current_data.list_Ppv_MT.tolist()), self.p_in.pick([3, 7, 21])), Domain.equalsTo(0.0))
-        st_mt_qin = self.model.constraint(Expr.sub(Expr.add(Expr.sub(self.q_mt, Expr.mulElm(self.load_shed.pick([4, 8, 22]), current_data.list_Qload_MT.tolist(
-        ))), current_data.list_Qpv_MT.tolist()), self.q_in.pick([3, 7, 21])), Domain.equalsTo(0.0))
+        st_mt_pin = self.model.constraint(Expr.sub(
+            Expr.add(Expr.sub(self.p_mt, Expr.mulElm(self.load_shed.pick([3, 7, 21]), current_data.list_Pload_MT.tolist(
+            ))), current_data.list_Ppv_MT.tolist()), self.p_in.pick([3, 7, 21])), Domain.equalsTo(0.0))
+        st_mt_qin = self.model.constraint(Expr.sub(
+            Expr.add(Expr.sub(self.q_mt, Expr.mulElm(self.load_shed.pick([3, 7, 21]), current_data.list_Qload_MT.tolist(
+            ))), current_data.list_Qpv_MT.tolist()), self.q_in.pick([3, 7, 21])), Domain.equalsTo(0.0))
 
         # for MT-free nodes
-
-        st_pin = self.model.constraint(Expr.sub(Expr.sub(Expr.add(Expr.mulElm(self.load_shed.pick(current_data.list_in_loadshed.tolist()), current_data.list_Pload.tolist()), self.p_in.pick(
-            current_data.list_in.tolist())), current_data.list_Ppv.tolist()),current_data.list_Pwt.tolist()), Domain.equalsTo(0.0))
-        st_qin = self.model.constraint(Expr.sub(Expr.sub(Expr.add(Expr.mulElm(self.load_shed.pick(current_data.list_in_loadshed.tolist()), current_data.list_Qload.tolist()), self.q_in.pick(
-            current_data.list_in.tolist())), current_data.list_Qpv.tolist()),current_data.list_Qwt.tolist()), Domain.equalsTo(0.0))
+        # P_pv + P_wt - shed * P_load = P_in
+        st_pin = self.model.constraint(Expr.sub(Expr.sub(Expr.add(
+            Expr.mulElm(self.load_shed.pick(
+                current_data.list_in_loadshed.tolist()), current_data.list_Pload.tolist()),
+            self.p_in.pick(
+                current_data.list_in.tolist())), current_data.list_Ppv.tolist()), current_data.list_Pwt.tolist()),
+            Domain.equalsTo(0.0))
+        st_qin = self.model.constraint(Expr.sub(Expr.sub(Expr.add(
+            Expr.mulElm(self.load_shed.pick(
+                current_data.list_in_loadshed.tolist()), current_data.list_Qload.tolist()),
+            self.q_in.pick(
+                current_data.list_in.tolist())), current_data.list_Qpv.tolist()), current_data.list_Qwt.tolist()),
+            Domain.equalsTo(0.0))
 
         # Dist-Flow power constraints
 
@@ -120,52 +130,48 @@ class SOCPTask:
             Expr.mul(self.mask_matrix_jk.tolist(), self.q_forward)), Domain.equalsTo(0.0))
 
         # Dist-Flow node voltage constraints
+        # test=self.model.constraint(Expr.mul(50,Expr.sub(1,self.alpha.index(37))),Domain.equalsTo(0.0))
 
-        st_df1 = self.model.constraint(Expr.add(Expr.sub(
-            Expr.add(Expr.sub(Expr.mul(self.mask_matrix_i.tolist(), self.v_sqr), self.v_sqr),
-                     Expr.mulElm(list(self.bigM * np.ones(33)), Expr.sub(list(np.ones(33, dtype=int)),
-                                                                         Expr.mul(self.mask_matrix_ij.tolist(),
-                                                                                  self.alpha)))),
-            Expr.mulElm(list(2 * np.ones(33)), Expr.add(Expr.mul(self.mask_matrix_r.tolist(), self.p_forward),
-                                                        Expr.mul(self.mask_matrix_x.tolist(), self.q_forward)))),
-            Expr.mul(self.mask_matrix_sqrz.tolist(), self.i_sqr)),
-            Domain.greaterThan(0.0))
-        st_df2 = self.model.constraint(Expr.add(Expr.sub(
-            Expr.sub(Expr.sub(Expr.mul(self.mask_matrix_i.tolist(), self.v_sqr), self.v_sqr),
-                     Expr.mulElm(list(self.bigM * np.ones(33)), Expr.sub(list(np.ones(33, dtype=int)),
-                                                                         Expr.mul(self.mask_matrix_ij.tolist(),
-                                                                                  self.alpha)))),
-            Expr.mulElm(list(2 * np.ones(33)), Expr.add(Expr.mul(self.mask_matrix_r.tolist(), self.p_forward),
-                                                        Expr.mul(self.mask_matrix_x.tolist(), self.q_forward)))),
-            Expr.mul(self.mask_matrix_sqrz.tolist(), self.i_sqr)),
-            Domain.lessThan(0.0))
+        for idx in range(0, current_data.num_lines):
+            ij, r, x, z_sqr = current_data.lookup(idx)
+            self.model.constraint(Expr.add(Expr.sub(Expr.add(Expr.sub(self.v_sqr.index(ij[0]-1), self.v_sqr.index(ij[1]-1)), Expr.mul(self.bigM, Expr.sub(
+                1, self.alpha.index(idx)))), Expr.mul(2, Expr.add(Expr.mul(r, self.p_forward.index(idx)), Expr.mul(x, self.q_forward.index(idx))))), Expr.mul(z_sqr, self.i_sqr.index(idx))), Domain.greaterThan(0.0))
+            self.model.constraint(Expr.add(Expr.sub(Expr.sub(Expr.sub(self.v_sqr.index(ij[0]-1), self.v_sqr.index(ij[1]-1)), Expr.mul(self.bigM, Expr.sub(
+                1, self.alpha.index(idx)))), Expr.mul(2, Expr.add(Expr.mul(r, self.p_forward.index(idx)), Expr.mul(x, self.q_forward.index(idx))))), Expr.mul(z_sqr, self.i_sqr.index(idx))), Domain.lessThan(0.0))
+            pass
 
         # R-SOC constraints
         for j in range(0, 33):
-            for jk in current_data.seek_neighbor(j + 1, mode="jk_forward"):
-                self.model.constraint(Expr.mulElm([1, 1, 0.5, 1], Var.vstack(
-                    Var.vstack(Var.vstack(self.p_forward.index(jk),
-                                          self.q_forward.index(jk)), self.v_sqr.index(j)),
-                    self.i_sqr.index(jk))), Domain.inRotatedQCone(4))
+            for jk in np.nonzero(current_data.seek_neighbor(j + 1, mode="jk_forward"))[0].tolist():
+                self.model.constraint(Expr.mulElm([0.5, 1, 1, 1], Var.vstack(
+                    Var.vstack(Var.vstack(self.v_sqr.index(j),
+                                          self.i_sqr.index(jk)), self.p_forward.index(jk)),
+                    self.q_forward.index(jk))), Domain.inRotatedQCone(4))
                 pass
             pass
 
         # ST
-        st_st1 = self.model.constraint(Expr.sub(Expr.mul(self.mask_matrix_pairs.tolist(
-        ), self.beta), Expr.mul(self.mask_matrix_ij, self.alpha)), Domain.equalsTo(0))
-        st_st2 = self.model.constraint(Expr.sum(
-            Expr.mul(self.mask_matrix_pairs_rootfree, self.beta)), Domain.equalsTo(1))
+        # beta_ij + beta_ji = alpha_ij
+        for idx in range(0, current_data.num_lines):
+            self.model.constraint(Expr.sub(Expr.add(self.beta.index(idx), self.beta.index(
+                idx+current_data.num_lines)), self.alpha.index(idx)), Domain.equalsTo(0))
+            pass
+        # sum( beta_ij ) = 1, for each i!=root
+        st_st2 = self.model.constraint(Expr.mul(
+            self.mask_matrix_pairs_rootfree.tolist(), self.beta), Domain.equalsTo(1))
+        # st_st2= self.model.constraint(Expr.sub(Expr.sum(self.beta),self.beta.index(0)),Domain.equalsTo(1))
+        # beta_ij = 0, i==root
         st_st3 = self.model.constraint(self.beta.index(0), Domain.equalsTo(0))
 
         # SCF
         st_scf1 = self.model.constraint(Expr.sub(Expr.mul(self.mask_matrix_jk_rootfree, self.f_flow), Expr.mul(
-            self.mask_matrix_ij_rootfree, self.f_flow)), Domain.equalsTo(0.0))
+            self.mask_matrix_ij_rootfree, self.f_flow)), Domain.equalsTo(-1.0))
         st_scf2_1 = self.model.constraint(Expr.sub(self.f_flow, Expr.mulElm(
-            self.alpha, list(self.bigM*np.ones(current_data.num_lines)))), Domain.lessThan(0.0))
+            self.alpha, list(self.bigM * np.ones(current_data.num_lines)))), Domain.lessThan(0.0))
         st_scf2_2 = self.model.constraint(Expr.add(self.f_flow, Expr.mulElm(
-            self.alpha, list(self.bigM*np.ones(current_data.num_lines)))), Domain.greaterThan(0.0))
+            self.alpha, list(self.bigM * np.ones(current_data.num_lines)))), Domain.greaterThan(0.0))
         st_scf3 = self.model.constraint(
-            Expr.sum(self.alpha), Domain.equalsTo(0))
+            Expr.sum(self.alpha), Domain.equalsTo(32))
 
         # Q-V droop control for PV & WT
 
@@ -178,7 +184,7 @@ class SOCPTask:
         # substaion
         # v_sub = 1.0 pu
         st_sub1 = self.model.constraint(
-            self.v_sqr.index(0), Domain.equalsTo(12.66e3**2))
+            self.v_sqr.index(0), Domain.equalsTo(12.66e3 ** 2))
 
     def make_objective(self, current_data: GridData):
         """
@@ -191,30 +197,32 @@ class SOCPTask:
         P_blackout = sum( (1-load_shed) * P_load)
 
         """
-        
-        obj_function =Expr.add(Expr.add(Expr.add(Expr.mul(current_data.current_price.tolist()[0],self.p_in.index(0)), Expr.sum(Expr.mulElm((current_data.current_price.tolist()[1]*np.ones(3)).tolist(),self.p_mt)))
-                                        ,Expr.mul(current_data.price_loss,Expr.sum(Expr.mulElm(self.i_sqr,current_data.list_r.tolist()))))
-                               ,Expr.mul(current_data.price_blackout,Expr.sum(Expr.mulElm(Expr.sub(np.ones(32).tolist(),self.load_shed),current_data.current_Pload.tolist()))))
-        self.model.objective("obj", ObjectiveSense.Minimize,obj_function)
+
+        obj_function = Expr.add(Expr.add(Expr.add(Expr.mul(current_data.current_price.tolist()[0], self.p_in.index(0)),
+                                                  Expr.sum(Expr.mulElm(
+                                                      (current_data.current_price.tolist()[
+                                                       1] * np.ones(3)).tolist(),
+                                                      self.p_mt))), Expr.mul(
+            current_data.price_loss, Expr.sum(Expr.mulElm(self.i_sqr, current_data.list_r.tolist())))),
+            Expr.mul(current_data.price_blackout, Expr.sum(
+                Expr.mulElm(Expr.sub(np.ones(32).tolist(), self.load_shed),
+                            current_data.current_Pload.tolist()))))
+        self.model.objective("obj", ObjectiveSense.Minimize, obj_function)
         pass
-    
+
     def solve(self):
-        
         """
         solve the SOCP 
         """
-        self.model.writeTask("test.opf")
         self.model.solve()
+        # self.model.writeTask("test.opf")
         print(self.model.getProblemStatus())
         print(self.model.getPrimalSolutionStatus())
-        
-        
-    
-        # v=self.v_sqr.level()
-        # print("\n".join(["v[%d] = %f " % (i,v[i]) for i in range(33)]))
+        print(problem.alpha.level())
+        print(problem.p_mt.level())
+        print(problem.q_mt.level())
         pass
-    
-    
+
     pass
 
 
@@ -222,11 +230,10 @@ if __name__ == "__main__":
     # create data agent
     data_case33 = GridData()
     # set max step
-    max_step = 1
-
-    for s in range(0,max_step):
+    max_step = 10
+    for s in range(0, max_step):
         # gather current data by moving a step
-        print("Step = ",s)
+        print("Step = ", s)
         data_case33.make_step(step=s)
         problem = SOCPTask(data_case33)
         problem.make_constraints(data_case33)
@@ -234,5 +241,4 @@ if __name__ == "__main__":
         problem.solve()
         pass
 
-   
     pass
