@@ -8,10 +8,10 @@ class GridData:
     data preprocess for solver
     """
 
-    def __init__(self, load=".\\data\\load.csv",
-                 pv=".\\data\\pv.csv", wt=".\\data\\wt.csv",
-                 event=".\\data\\event.csv", price=".\\data\\price.csv",
-                 grid=".\\data\\grid.csv"):
+    def __init__(self, load="./data/load.csv",
+                 pv="./data/pv.csv", wt="./data/wt.csv",
+                 event="./data/event.csv", price="./data/price.csv",
+                 grid="./data/grid.csv"):
         """
         load\pv\wt\event\price = data.csv patch
         """
