@@ -1,2 +1,4 @@
 lib/__pycache__/functions.cpython-37.pyc
-*.pyc
+.pyc
+.xml
+test.py
