@@ -1,4 +1,4 @@
 {
-    "python.pythonPath": "D:\\anaconda3\\envs\\tc\\python.exe",
+    "python.pythonPath": "/home/yuwenwu/miniconda3/envs/conqueree_tc14/bin/python",
     "python.formatting.provider": "autopep8"
 }
