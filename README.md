@@ -17,13 +17,13 @@ For example test
 
 # Data Set 
 1. The load data of 1500 households in lieerick（52.6653 -8.6238) and Ennis (52.8463,-8.9807) from the Irish Power Supply Authority (half an hour granularity) are used for the load.
-   ![image](img/map.png)
-   ![image](img/load.png)
+   ![image](https://github.com/RanZhu1989/case33Py/blob/master/img/map.png)
+   ![image](https://github.com/RanZhu1989/case33Py/blob/master/img/load.png)
    
 2. Weather parameters refer to the MERRA open source meteorological satellite database
 3. The photovoltaic modeling is based on GSEE
 4. The wind turbine modeling is based on the Vestas V90 2000 standard
 
 # moded IEEE-33BW case  
-![image](img/moded_IEEE-33BW.png)
+![image](https://github.com/RanZhu1989/case33Py/blob/master/img/moded_IEEE-33BW.png)
 
