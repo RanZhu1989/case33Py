@@ -1,10 +1,8 @@
 from mosek.fusion import *
-from lib.functions import *
-import pandapower
+from lib.GridData import *
 
 
-class SOCPTask:
-
+class MosekTask:
     """
     class of the optimization problem modeled with fusion in normal and slight fault
     in this class, the power flow is modeled as Dist-Flow, which will be a SOCP optimization problem
@@ -210,17 +208,41 @@ class SOCPTask:
         self.model.objective("obj", ObjectiveSense.Minimize, obj_function)
         pass
 
-    def solve(self):
+    def solve(self, step, current_data: GridData, log=False, debug=False):
         """
-        solve the SOCP 
+        run the solver and get the solution
+
+        - Optional - 
+        write the log in OPF file, which is named by "step"
+
+        Once the solution is OPTIMAL, the solution will be saved within GridData Class
+
+
         """
         self.model.solve()
-        # self.model.writeTask("test.opf")
-        print(self.model.getProblemStatus())
-        print(self.model.getPrimalSolutionStatus())
-        print(problem.alpha.level())
-        print(problem.p_mt.level())
-        print(problem.q_mt.level())
+
+        # write the log file
+        if log == True:
+            self.model.writeTask("./log/step_%d_test.opf" % (step+1))
+            pass
+
+        if debug == True:
+            print(str(self.model.getPrimalSolutionStatus()))
+            print(list(self.alpha.level()))
+            print(self.p_mt.level())
+            print(self.q_mt.level())
+            pass
+
+        if str(self.model.getPrimalSolutionStatus()) == "SolutionStatus.Optimal":
+            current_data.solution_mt_p = list(self.p_mt.level())
+            current_data.solution_mt_p = np.around(
+                current_data.solution_mt_p, 2)
+            current_data.solution_mt_q = list(self.q_mt.level())
+            current_data.solution_mt_q = np.around(
+                current_data.solution_mt_q, 2)
+            current_data.map_lines(self.alpha.level())
+            pass
+
         pass
 
     pass
@@ -235,10 +257,10 @@ if __name__ == "__main__":
         # gather current data by moving a step
         print("Step = ", s)
         data_case33.make_step(step=s)
-        problem = SOCPTask(data_case33)
+        problem = MosekTask(data_case33)
         problem.make_constraints(data_case33)
         problem.make_objective(data_case33)
-        problem.solve()
+        problem.solve(s, debug=True)
         pass
 
     pass

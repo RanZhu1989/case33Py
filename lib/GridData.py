@@ -5,7 +5,7 @@ np.set_printoptions(threshold=1e6)
 
 class GridData:
     """
-    data preprocess for solver
+    data for solver and pandapower environment
     """
 
     def __init__(self, load="./data/load.csv",
@@ -25,7 +25,6 @@ class GridData:
         self.num_lines = 37
         self.price_loss = 0.18
         self.price_blackout = 10
-
         pass
 
     def make_step(self, step=0):
@@ -121,6 +120,11 @@ class GridData:
 
         # get r_line alive
         self.list_r = self.current_gridPara_half_forward["r"]
+
+        # Initializing optimizer results buffer
+        self.solution_breaker_state = np.zeros(37)
+        self.solution_mt_p = np.zeros(3)
+        self.solution_mt_q = np.zeros(3)
 
         pass
 
@@ -265,16 +269,22 @@ class GridData:
                     self.current_gridPara_half_forward.iloc[[idx]]["node_j"].tolist()[0]), r, x, z_sqr
         pass
 
-    def mirror(self, idx_forward):
+    def map_lines(self, res_alpha):
         """
-        [index] of ij pairs in half_forward table => [index] of ji pairs in whole table
+        map the variable alpha with dim(|linesAlive|) -> set breaker state
+        closed = 1
+        opened \ failed = 0 
         """
 
+        self.solution_breaker_state[list(map(lambda x, y: int(
+            x-y), list(self.current_gridPara_half_forward.loc[np.nonzero(res_alpha)]["line_no"]), np.ones(self.num_lines)))]=1
+        # print("list=", list(map(lambda x, y: int(
+        #     x-y), list(self.current_gridPara_half_forward.loc[np.nonzero(res_alpha)]["line_no"]), np.ones(self.num_lines))))
         pass
 
     def make_cash(self):
         """
-        saving the preserving variable such as P_mt(old), SOC(old)
+        save the preserving variable such as P_mt(old), SOC(old)
         """
         pass
 
