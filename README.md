@@ -4,6 +4,9 @@
 Author：Ran Zhu @ School of Cyber Engineering and Science, SEU  
 For example test  
 
+# Example：  
+![image](https://github.com/RanZhu1989/case33Py/blob/master/img/Example.png)  
+
 # References：
 - IEEE33BW case ——                 *1989, M.E.Baran, TPS*
 - DER Installation Position ——    *2019, Xu, TSG*
