@@ -1,5 +1,3 @@
-from os import terminal_size
-from pandapower import networks
 from lib.MosekTask import *
 from lib.GridData import *
 from lib.PandapowerTask import *
@@ -12,6 +10,7 @@ network = PandapowerTask()
 max_step = 10
 for s in range(0, max_step):
     # gather current data by moving a step
+    print("Step = ", s )
     data_case33.make_step(step=s)
     problem = MosekTask(data_case33)
     problem.make_constraints(data_case33)

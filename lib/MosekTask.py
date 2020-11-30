@@ -241,6 +241,9 @@ class MosekTask:
             current_data.solution_mt_q = np.around(
                 current_data.solution_mt_q, 2)
             current_data.map_lines(self.alpha.level())
+        if debug==True:
+            print(current_data.solution_breaker_state)
+            print(np.nonzero(current_data.solution_breaker_state))
             pass
 
         pass

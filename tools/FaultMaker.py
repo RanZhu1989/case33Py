@@ -49,7 +49,7 @@ class FaultMaker():
         """
         # reset net
         self.reflash_net()
-        res_sense = np.ones((loop,37), dtype=int)
+        res_sense = np.zeros((loop,37), dtype=int)
         if mode == "N-1":
             s=0
             for i in range(loop):
@@ -59,7 +59,7 @@ class FaultMaker():
                     if island_bus == False:
                         self.prim_net.line["in_service"][faultlist] = False
                         if len(pt.unsupplied_buses(self.prim_net)) == 0:
-                            res_sense[s,faultlist] = 0
+                            res_sense[s,faultlist] = 1
                             s+=1
                             pass
                         pass
@@ -87,7 +87,7 @@ class FaultMaker():
                         self.prim_net.line["in_service"][faultlist[0]] = False
                         self.prim_net.line["in_service"][faultlist[1]] = False
                         if len(pt.unsupplied_buses(self.prim_net)) == 0:
-                            res_sense[s,faultlist] = 0
+                            res_sense[s,faultlist] = 1
                             s+=1
                             pass
                         pass
