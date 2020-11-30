@@ -1,7 +1,8 @@
 from lib.GridData import *
 import pandapower as pp
 import pandapower.networks as pn
-import pandapower.plotting as plot
+import pandapower.plotting as pplot
+import pandapower.topology as pt
 
 
 class PandapowerTask():
@@ -105,6 +106,15 @@ class PandapowerTask():
             data.current_price.tolist(
             )[1]*(data.solution_mt_p.tolist()[0]+data.solution_mt_p.tolist()[1])
         return reward
+    
+    def check_energized(self):
+        """
+        Check the island bus
+        """
+        
+        num_deenergized=len(pt.unsupplied_buses(self.net))
+        list_deenergized=list(pt.unsupplied_buses(self.net))
+        return num_deenergized,list_deenergized
 
     def render(self, data: GridData):
         """
@@ -135,7 +145,7 @@ class PandapowerTask():
         # calculate reward
         self.reward = self.cal_reward(data)
         print(self.reward)
-        plot.simple_plot(self.net)
+        pplot.simple_plot(self.net)
         pass
 
     def reset(self):
@@ -146,3 +156,7 @@ class PandapowerTask():
         pass
 
     pass
+
+if __name__ =="__main__":
+    network=PandapowerTask()
+    print(network.switch)
