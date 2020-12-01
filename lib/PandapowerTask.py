@@ -1,4 +1,6 @@
 
+from os import write
+import time
 from lib.GridData import *
 import pandapower as pp
 import pandapower.networks as pn
@@ -10,6 +12,7 @@ try:
     colors = seaborn.color_palette()
 except:
     colors = ["b", "g", "r", "c", "y"]
+
 
 class PandapowerTask():
     """
@@ -32,6 +35,7 @@ class PandapowerTask():
         self.penalty_voltage = 1.0
         self.reward = 0.0
         self.sum_blackout = 0.0
+        self.start_time=self.make_time()
         pass
 
     def set_parameters(self, data: GridData):
@@ -95,7 +99,7 @@ class PandapowerTask():
         set breaker state
         """
 
-        for i in range(0, 36):
+        for i in range(37):
             self.net.line["in_service"][i] = data.solution_breaker_state.astype(bool)[
                 i]
             pass
@@ -106,21 +110,21 @@ class PandapowerTask():
         * the function for calculating the reward *
         Reward = (penalty coefficient) * voltagebias + (pirce_loss) * total power loss + (price_blackout) * load loss + (mt_cost) * total P_mt
         """
-
-        reward = self.penalty_voltage * self.voltage_bias + data.price_loss * \
-            self.loss_total + data.price_blackout * self.sum_blackout + \
-            data.current_price.tolist(
-            )[1]*(data.solution_mt_p.tolist()[0]+data.solution_mt_p.tolist()[1])
+        print("负荷损失为", self.sum_blackout)
+        reward = (self.penalty_voltage * self.voltage_bias + data.price_loss *
+                  self.loss_total * 1e3 + data.price_blackout * self.sum_blackout*1e3 +
+                  data.current_price.tolist(
+                  )[1]*(data.solution_mt_p.tolist()[0]+data.solution_mt_p.tolist()[1])*1e-3)*-1
         return reward
-    
+
     def check_energized(self):
         """
         Check the island bus
         """
-        
-        num_de_energized=len(pt.unsupplied_buses(self.net))
-        list_de_energized=list(pt.unsupplied_buses(self.net))
-        return num_de_energized,list_de_energized
+
+        num_de_energized = len(pt.unsupplied_buses(self.net))
+        list_de_energized = list(pt.unsupplied_buses(self.net))
+        return num_de_energized, list_de_energized
 
     def render(self, data: GridData):
         """
@@ -154,7 +158,7 @@ class PandapowerTask():
         print(self.net.res_bus)
         print(self.net.res_line)
         print(self.net.res_load)
-        self.network_plot(mode="color_map")
+        self.network_plot(data, mode="color_map")
         pass
 
     def reset(self):
@@ -166,54 +170,112 @@ class PandapowerTask():
         self.net.load = self.net.load.sort_index()
         self.net.line = self.net.line.sort_index()
         pass
-    
-    def network_plot(self,mode="topological_graph"):
+
+    def network_plot(self, data: GridData, mode="topological_graph",pause=5):
         """
         plot the network using matplotlib
-        
+
         * mode = topological_graph or color_map
         """
-    
-        if mode=="topological_graph":
+
+        if mode == "topological_graph":
             self.net.bus_geodata.drop(self.net.bus_geodata.index, inplace=True)
-            self.net.line_geodata.drop(self.net.line_geodata.index, inplace=True)
-            pplot.create_generic_coordinates(self.net) 
+            self.net.line_geodata.drop(
+                self.net.line_geodata.index, inplace=True)
+            pplot.create_generic_coordinates(self.net)
             pplot.fuse_geodata(self.net)
-            buses = self.net.bus.index.tolist() 
-            coords = zip(self.net.bus_geodata.x.loc[buses].values, self.net.bus_geodata.y.loc[buses].values)
-            bus_layer = pplot.create_bus_collection(self.net, self.net.bus.index, size=.05, color="black", zorder=1)
-            sub_layer = pplot.create_bus_collection(self.net, self.net.ext_grid.bus.values, patch_type="rect", size=.2, color="yellow", zorder=2)
-            busid_layer = pplot.create_annotation_collection(size=0.2, texts=np.char.mod('%d', buses), coords=coords, zorder=3, color="blue")
-            line_layer = pplot.create_line_collection(self.net, self.net.line.index, color="green",linestyles="dashed", linewidths=0.5, use_bus_geodata=True,zorder=4)
+            buses = self.net.bus.index.tolist()
+            coords = zip(
+                self.net.bus_geodata.x.loc[buses].values, self.net.bus_geodata.y.loc[buses].values)
+            bus_layer = pplot.create_bus_collection(
+                self.net, self.net.bus.index, size=.05, color="black", zorder=1)
+            sub_layer = pplot.create_bus_collection(
+                self.net, self.net.ext_grid.bus.values, patch_type="rect", size=.2, color="yellow", zorder=2)
+            busid_layer = pplot.create_annotation_collection(
+                size=0.2, texts=np.char.mod('%d', buses), coords=coords, zorder=3, color="blue")
+            line_layer = pplot.create_line_collection(
+                self.net, self.net.line.index, color="grey", linestyles="dashed", linewidths=0.2, use_bus_geodata=True, zorder=4)
             lines_ergized = self.net.line[self.net.line.in_service == True].index
-            line_ergized_layer=pplot.create_line_collection(self.net,lines_ergized,color="red",zorder=5)
-            pplot.draw_collections([line_layer, bus_layer, sub_layer,busid_layer,line_ergized_layer], figsize=(8,6))
-            plt.show()
+            line_ergized_layer = pplot.create_line_collection(
+                self.net, lines_ergized, color="red", zorder=5)
+            pplot.draw_collections(
+                [line_layer, bus_layer, sub_layer, busid_layer, line_ergized_layer], figsize=(8, 6))
             pass
-        
-        if mode=="color_map":
+
+        if mode == "color_map":
             self.net.bus_geodata.drop(self.net.bus_geodata.index, inplace=True)
-            self.net.line_geodata.drop(self.net.line_geodata.index, inplace=True)
-            voltage_map=[((0.975, 0.985), "blue"), ((0.985, 1.0), "green"), ((1.0, 1.03), "red")]
+            self.net.line_geodata.drop(
+                self.net.line_geodata.index, inplace=True)
+            voltage_map = [((0.975, 0.985), "blue"),
+                           ((0.985, 1.0), "green"), ((1.0, 1.03), "red")]
             cmap, norm = pplot.cmap_discrete(voltage_map)
-            pplot.create_generic_coordinates(self.net) 
+            pplot.create_generic_coordinates(self.net)
             pplot.fuse_geodata(self.net)
-            buses = self.net.bus.index.tolist() 
-            coords = zip(self.net.bus_geodata.x.loc[buses].values, self.net.bus_geodata.y.loc[buses].values)
-            bus_layer = pplot.create_bus_collection(self.net, self.net.bus.index, size=.05, cmap=cmap, norm=norm,color="black", zorder=1)
-            sub_layer = pplot.create_bus_collection(self.net, self.net.ext_grid.bus.values, patch_type="rect", size=.2, color="yellow", zorder=2)
-            busid_layer = pplot.create_annotation_collection(size=0.2, texts=np.char.mod('%d', buses), coords=coords, zorder=3, color="blue")
-            line_layer = pplot.create_line_collection(self.net, self.net.line.index, color="green",linestyles="dashed", linewidths=0.5, use_bus_geodata=True,zorder=4)
+            buses = self.net.bus.index.tolist()
+            coords = zip(
+                self.net.bus_geodata.x.loc[buses].values, self.net.bus_geodata.y.loc[buses].values)
+            bus_layer = pplot.create_bus_collection(
+                self.net, self.net.bus.index, size=.05, cmap=cmap, norm=norm, color="black", zorder=1)
+            sub_layer = pplot.create_bus_collection(
+                self.net, self.net.ext_grid.bus.values, patch_type="rect", size=.2, color="yellow", zorder=2)
+            busid_layer = pplot.create_annotation_collection(
+                size=0.2, texts=np.char.mod('%d', buses), coords=coords, zorder=3, color="blue")
+            line_layer = pplot.create_line_collection(
+                self.net, self.net.line.index, color="grey", linestyles="dashed", linewidths=0.2, use_bus_geodata=True, zorder=4)
             lines_ergized = self.net.line[self.net.line.in_service == True].index
-            line_ergized_layer=pplot.create_line_collection(self.net,lines_ergized,color="red",zorder=5)
-            pplot.draw_collections([line_layer, bus_layer, sub_layer,busid_layer,line_ergized_layer], figsize=(8,6))
-            plt.show()
+            line_ergized_layer = pplot.create_line_collection(
+                self.net, lines_ergized, color="red", zorder=5)
+            pplot.draw_collections(
+                [line_layer, bus_layer, sub_layer, busid_layer, line_ergized_layer], figsize=(8, 6))
             pass
-        
+
+        plt.ion()
+        plt.plot()
+        plt.annotate("fault lines: %s" % data.list_fault_line, (-2.3, -2.8))
+        plt.pause(pause)
+        plt.close()
         pass
-    
+        
+    def out2file(self):
+        """
+        docstring
+        """
+        path="./out/res_MDPC/"+self.start_time+ "prim_MDPC.csv"
+        with open(path,"a+") as file:
+            for i in range(33):     
+                file.write(str(self.net.res_bus.sort_index()["vm_pu"][i])+",")
+                pass
+            for i in range(33): 
+                file.write(str(self.net.res_bus.sort_index()["p_mw"][i])+",")
+                pass
+            for i in range(33): 
+                file.write(str(self.net.res_bus.sort_index()["q_mvar"][i])+",")
+                pass
+            for i in range(37): 
+                if i<36:
+                    file.write(str(self.net.line.sort_index()["in_service"][i])+",")
+                else:file.write(str(self.net.line.sort_index()["in_service"][i]))    
+                pass
+            file.write("\n")
+            pass
+        pass
+
+    def make_time(self):
+        """
+        docstring
+        """
+        current_time=time.localtime(time.time())
+        y=current_time[0]
+        mon=current_time[1]
+        d=current_time[2]
+        h=current_time[3]
+        m=current_time[4]
+        res=str(y)+str(mon)+str(d)+"time"+str(h)+"_"+str(m)
+        return  res
+
     pass
 
-if __name__ =="__main__":
-    
+
+if __name__ == "__main__":
+
     pass

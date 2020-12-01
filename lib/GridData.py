@@ -1,3 +1,4 @@
+from math import sqrt
 import pandas as pd
 import numpy as np
 np.set_printoptions(threshold=1e6)
@@ -117,6 +118,9 @@ class GridData:
 
         # get number of lines alive
         self.num_lines = self.current_gridPara_half_forward.shape[0]
+
+        # make list of fault line
+        self.list_fault_line = self.make_fault_list()
 
         # get r_line alive
         self.list_r = self.current_gridPara_half_forward["r"]
@@ -268,6 +272,21 @@ class GridData:
             return (self.current_gridPara_half_forward.iloc[[idx]]["node_i"].tolist()[0],
                     self.current_gridPara_half_forward.iloc[[idx]]["node_j"].tolist()[0]), r, x, z_sqr
         pass
+
+    def make_fault_list(self):
+        """
+        make list of fault line
+        """
+
+        list_fault_line = list(np.nonzero(self.current_event))[0]
+        res = []
+        for idx in list_fault_line:
+            find = (self.current_gridPara.drop(
+                labels=range(37, 74), axis=0).iloc[[idx]]["node_i"].tolist()[0],
+                self.current_gridPara.drop(
+                labels=range(37, 74), axis=0).iloc[[idx]]["node_j"].tolist()[0])
+            res.append(find)
+        return res
 
     def map_lines(self, res_alpha):
         """
