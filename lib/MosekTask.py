@@ -1,7 +1,6 @@
 from mosek.fusion import *
 from lib.GridData import *
 
-
 class MosekTask:
     """
     class of the optimization problem modeled with fusion in normal and slight fault
@@ -61,7 +60,7 @@ class MosekTask:
         self.q_in = self.model.variable("q_in", 33)
 
         # big M
-        self.bigM = 50
+        self.bigM = 1e6
 
         pass
 
@@ -156,8 +155,7 @@ class MosekTask:
             pass
         # sum( beta_ij ) = 1, for each i!=root
         st_st2 = self.model.constraint(Expr.mul(
-            self.mask_matrix_pairs_rootfree.tolist(), self.beta), Domain.equalsTo(1))
-        # st_st2= self.model.constraint(Expr.sub(Expr.sum(self.beta),self.beta.index(0)),Domain.equalsTo(1))
+            self.mask_matrix_pairs_rootfree.tolist(), self.beta), Domain.equalsTo(1))    
         # beta_ij = 0, i==root
         st_st3 = self.model.constraint(self.beta.index(0), Domain.equalsTo(0))
 
@@ -183,6 +181,7 @@ class MosekTask:
         # v_sub = 1.0 pu
         st_sub1 = self.model.constraint(
             self.v_sqr.index(0), Domain.equalsTo(12.66e3 ** 2))
+        st_sub2 = self.model.constraint(self.p_in.index(0),Domain.lessThan(0.0))
 
     def make_objective(self, current_data: GridData):
         """
@@ -219,6 +218,7 @@ class MosekTask:
 
 
         """
+        self.model.setSolverParam("intpntCoTolRelGap", 1e-2)
         self.model.solve()
 
         # write the log file
@@ -241,6 +241,9 @@ class MosekTask:
             current_data.solution_mt_q = np.around(
                 current_data.solution_mt_q, 2)
             current_data.map_lines(self.alpha.level())
+        if debug==True:
+            print(current_data.solution_breaker_state)
+            print(np.nonzero(current_data.solution_breaker_state))
             pass
 
         pass
