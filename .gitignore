@@ -1,4 +1,5 @@
 lib/__pycache__/functions.cpython-37.pyc
-.pyc
-.xml
+/__pycache__/
+*.xml
 test.py
+/.idea/

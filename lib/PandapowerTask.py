@@ -54,8 +54,8 @@ class PandapowerTask():
         set load in current step
         """
         for i in range(0, 32):
-            self.net.load["p_mw"][i] = 1e-6 * data.current_Pload[i]
-            self.net.load["q_mvar"][i] = 1e-6 * data.current_Qload[i]
+            self.net.load["p_mw"][i] = 1e-6 * data.current_Pload[i] *data.solution_loadshed[i]
+            self.net.load["q_mvar"][i] = 1e-6 * data.current_Qload[i]*data.solution_loadshed[i]
             pass
         pass
 
@@ -108,7 +108,8 @@ class PandapowerTask():
     def cal_reward(self, data: GridData):
         """
         * the function for calculating the reward *
-        Reward = (penalty coefficient) * voltagebias + (pirce_loss) * total power loss + (price_blackout) * load loss + (mt_cost) * total P_mt
+        Reward = (penalty coefficient) * bias of voltage + (pirce_loss) * total power loss 
+        + (price_blackout) * load loss + (mt_cost) * total P_mt
         """
         print("负荷损失为", self.sum_blackout)
         reward = (self.penalty_voltage * self.voltage_bias + data.price_loss *
@@ -231,6 +232,7 @@ class PandapowerTask():
 
         plt.ion()
         plt.plot()
+        # put the fault lines list in the figure
         plt.annotate("fault lines: %s" % data.list_fault_line, (-2.3, -2.8))
         plt.pause(pause)
         plt.close()
@@ -238,7 +240,43 @@ class PandapowerTask():
         
     def out2file(self):
         """
-        docstring
+        save MDP chain (S_t,A_t,R_t,S_t+1) to csv file
+        
+        ** S = { P_i, (Toplogy, Fault_lines) }  dim = 39
+            + P_i is the aggregation of:
+                1. activate power of load in 32 nodes
+                2. activate power output of PV and WT
+                3. in future the ES will be introduced
+            + Toplogy is a set of 7 breakers 
+            # in the worst case, 7 breakers could be opened (5 for normal constraint + 2 for fault) 
+             (at present, we focus on N-1 and N-2 problems in IEEE33BW case) 
+                Because |line| = 37 , |node| =33 , the ST constraint makes always 32 breakers closed 
+                to make full load restroation.
+            + Fault_lines is a list of fault breakers (at most 2)
+                in case33bw, |line| = 37 
+                the number of fault senses aviliable is almost to 500
+                e.g.  
+                      only line#1 fail => ( 1, 0 ) 
+                      line#2 and line#3 fail =>( 2, 3)    
+                      normal operation => ( 0, 0 )
+            !!S_t comes from the solution of the previous step, while S_t+1 is taken from the current solution:
+                1. to form S_t:
+                GridData.cash => current_P_load, current_P_PV, current_P_WT, net.line["in_service"]
+                GridData.current_event => list_fault_lines( dim=2 )
+                2. to form S_t+1:
+                GridData.current_xxx => current_P_load, current_P_PV, current_P_WT
+                PandapowerTask.net.line["in_service"]
+                
+                                 
+               
+                    
+        ** A = { Pmt_i, Qmt_i, Alpha_i }
+            + Pmt_i and Qmt_i are the three MTs' output
+            + Alpha_i is a set of 5 breakers
+             (at present, we focus on N-1 and N-2 problems in IEEE33BW case) 
+                Because |line| = 37 , |node| =33 , the ST constraint makes always 32 breakers closed 
+                to make full load restroation.
+             
         """
         path="./out/res_MDPC/"+self.start_time+ "prim_MDPC.csv"
         with open(path,"a+") as file:
@@ -262,7 +300,7 @@ class PandapowerTask():
 
     def make_time(self):
         """
-        docstring
+        return a list about current time
         """
         current_time=time.localtime(time.time())
         y=current_time[0]

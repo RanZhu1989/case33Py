@@ -1,4 +1,5 @@
 from math import sqrt
+from os import terminal_size
 import pandas as pd
 import numpy as np
 np.set_printoptions(threshold=1e6)
@@ -26,6 +27,12 @@ class GridData:
         self.num_lines = 37
         self.price_loss = 0.18
         self.price_blackout = 10
+        # make a static topology table
+        self.static_gridPara = self.current_gridPara.copy().reset_index()
+        self.static_gridPara_half_forward = self.static_gridPara.copy().drop(
+            labels=range(37, 74), axis=0).reset_index()
+        self.static_gridPara_half_backward = self.static_gridPara.copy().drop(
+            labels=range(0, 37), axis=0).reset_index()
         pass
 
     def make_step(self, step=0):
@@ -121,7 +128,9 @@ class GridData:
 
         # make list of fault line
         self.list_fault_line = self.make_fault_list()
-
+        self.list_fault_line_number= list(np.nonzero(self.current_event))[0]
+        self.list_fault_line_number= self.list_fault_line_number.astype(np.int32)
+        
         # get r_line alive
         self.list_r = self.current_gridPara_half_forward["r"]
 
@@ -129,14 +138,18 @@ class GridData:
         self.solution_breaker_state = np.zeros(37)
         self.solution_mt_p = np.zeros(3)
         self.solution_mt_q = np.zeros(3)
+        self.solution_loadshed = np.zeros(32)
 
         pass
 
-    def seek_neighbor(self, node, mode="jk_forward"):
+    def seek_neighbor(self, node, mode="jk_forward", current_state=True):
         """
         set input node = j
         j -> row for matrix A
         This function helps to create the neighbor-relational matrix for constraints build
+
+        # current_state = True => search the topology ignoring the filed lines
+        # current_state = False => search the topology using the original network 
 
         **jk_forward .= j -> k , start node = j 
         +RETURN:
@@ -151,30 +164,51 @@ class GridData:
             (list)mask_sqrz_row:row of mask matrix for Dist-Flow with multiply z^2 value
             (list)mask_i_row:row of mask matrix for find the neighbor i node, which is constrained in (i,j) edge
 
-        **backward .= backward node <- j
+        **all_ij_forward .=  find (i,j) in all (i,j)(j,i) pairs
+          or
+          all_jk_forward .=  find (j,k) in all (i,j)(j,i) pairs
         +RETURN:
             (list)mask_row : row of mask matrix for constraints building
 
         **pairs .= backward node <- j get (i,j) AND backward node -> j get (j,i)
         +RETURN:
             (list)mask_row : row of mask matrix for topology constraints building
+            
+        **count .= count the number of neighbor nodes of the input node j
+        +RETURN:
+            (int)num_neighbor : scalar
 
+        
         """
+        if current_state == True:
+            num_cols = self.current_gridPara_half_forward.shape[0]
+        else:
+            num_cols = 37
+            pass
 
-        num_cols = self.current_gridPara_half_forward.shape[0]
         # print(num_cols)
 
         if mode == "jk_forward":
-            find_jk_forward = self.current_gridPara_half_forward[
-                self.current_gridPara_half_forward["node_i"].isin([node])]
+            if current_state == True:
+                find_jk_forward = self.current_gridPara_half_forward[
+                    self.current_gridPara_half_forward["node_i"].isin([node])]
+            else:
+                find_jk_forward = self.static_gridPara_half_forward[
+                    self.static_gridPara_half_forward["node_i"].isin([node])]
+                pass
             idx = find_jk_forward.index
             mask_row = np.zeros(num_cols, dtype=int)
             mask_row[list(idx)] = 1
             return mask_row
 
         if mode == "ij_forward":
-            find_ij_forward = self.current_gridPara_half_forward[
-                self.current_gridPara_half_forward["node_j"].isin([node])]
+            if current_state == True:
+                find_ij_forward = self.current_gridPara_half_forward[
+                    self.current_gridPara_half_forward["node_j"].isin([node])]
+            else:
+                find_ij_forward = self.static_gridPara_half_forward[
+                    self.static_gridPara_half_forward["node_j"].isin([node])]
+                pass
             idx = find_ij_forward.index
             mask_row = np.zeros(num_cols, dtype=int)
             mask_row_i = np.zeros(34, dtype=int)
@@ -190,19 +224,53 @@ class GridData:
             # drop the first element
             mask_row_i = mask_row_i[1:]
             return mask_row, mask_r_row, mask_x_row, mask_sqrz_row, mask_row_i
+        '''
+        the "all_" mode often used to build Directed Multi Commodity Flow constraint
+        in DNR task, some nodes should be ignored
+        .iloc[[idx]]["node_i"]
+        '''
+        if mode == "all_ij_forward":
+            mask_row = np.zeros(num_cols*2, dtype=int)
+            if current_state == True:
+                find_ij_forward = self.copy_current_gridPara[
+                    self.copy_current_gridPara["node_j"].isin([node])]
+            else:
+                find_ij_forward = self.static_gridPara[
+                    self.static_gridPara["node_j"].isin([node])]
+                pass
+            idx = find_ij_forward.index
+            mask_row[list(idx)] = 1
+            return mask_row
 
-        if mode == "backward":
-            find_backward = self.current_gridPara_half_backward[
-                self.current_gridPara_half_backward["node_j"].isin([node])]
+        if mode == "all_jk_forward":
+            mask_row = np.zeros(num_cols*2, dtype=int)
+            if current_state == True:
+                find_ij_forward = self.copy_current_gridPara[
+                    self.copy_current_gridPara["node_i"].isin([node])]
+            else:
+                find_ij_forward = self.static_gridPara[
+                    self.static_gridPara["node_i"].isin([node])]
+                pass
             pass
+            idx = find_ij_forward.index
+            mask_row[list(idx)] = 1
+            return mask_row
 
         if mode == "pairs":
-            # search in "ij" table
-            find_all_ij = self.copy_current_gridPara.loc[0:self.num_lines -
-                                                         1][self.copy_current_gridPara.loc[0:self.num_lines-1]["node_i"].isin([node])]
+
+            if current_state == True:
+                # search in "ij" table
+                find_all_ij = self.copy_current_gridPara.loc[0:self.num_lines -
+                                                             1][self.copy_current_gridPara.loc[0:self.num_lines-1]["node_i"].isin([node])]
             # search in "ji" table
-            find_all_ji = self.copy_current_gridPara.loc[self.num_lines:2*self.num_lines -
-                                                         1][self.copy_current_gridPara.loc[self.num_lines:2*self.num_lines-1]["node_i"].isin([node])]
+                find_all_ji = self.copy_current_gridPara.loc[self.num_lines:2*self.num_lines -
+                                                             1][self.copy_current_gridPara.loc[self.num_lines:2*self.num_lines-1]["node_i"].isin([node])]
+            else:
+                find_all_ij = self.static_gridPara.loc[0:self.num_lines -
+                                                       1][self.static_gridPara.loc[0:self.num_lines-1]["node_i"].isin([node])]
+                find_all_ji = self.static_gridPara.loc[self.num_lines:2*self.num_lines -
+                                                       1][self.static_gridPara.loc[self.num_lines:2*self.num_lines-1]["node_i"].isin([node])]
+
             idx_ij = find_all_ij.index
             idx_ji = find_all_ji.index
             mask_row = np.zeros(num_cols * 2, dtype=int)
@@ -212,8 +280,11 @@ class GridData:
 
         pass
 
-    def make_matrix(self, mode="jk_forward"):
+    def make_matrix(self, mode="jk_forward", current_state=True):
         """
+        # current_state = True => search the topology ignoring the filed lines
+        # current_state = False => search the topology using the original network 
+
         build matrix for constrants:
 
         #both for jk\ij_forward mode
@@ -224,27 +295,33 @@ class GridData:
             res_sqrz_matrix => z^2_ij * l_ij
             res_i_matrix    => v_i - v_j
         """
+        if current_state == False:
+            num_lines = 37
+        else:
+            num_lines = self.num_lines
 
         if mode == "pairs":
-            res_line_matrix = np.zeros((33, self.num_lines * 2), dtype=int)
+            res_line_matrix = np.zeros((33, num_lines * 2), dtype=int)
         else:
-            res_line_matrix = np.zeros((33, self.num_lines), dtype=int)
+            res_line_matrix = np.zeros((33, num_lines), dtype=int)
 
-        res_r_matrix = np.zeros((33, self.num_lines), dtype=float)
-        res_x_matrix = np.zeros((33, self.num_lines), dtype=float)
-        res_sqrz_matrix = np.zeros((33, self.num_lines), dtype=float)
+        res_r_matrix = np.zeros((33, num_lines), dtype=float)
+        res_x_matrix = np.zeros((33, num_lines), dtype=float)
+        res_sqrz_matrix = np.zeros((33, num_lines), dtype=float)
         res_i_matrix = np.zeros((33, 33), dtype=int)
 
         for j in range(0, 33):
             if mode == "jk_forward":
-                res_line_matrix[j, ] = self.seek_neighbor(j + 1, "jk_forward")
+                res_line_matrix[j, ] = self.seek_neighbor(
+                    j + 1, "jk_forward", current_state)
                 pass
             if mode == "ij_forward":
                 res_line_matrix[j, ], res_r_matrix[j, ], res_x_matrix[j, ], res_sqrz_matrix[j, ], res_i_matrix[
-                    j, ] = self.seek_neighbor(j + 1, "ij_forward")
+                    j, ] = self.seek_neighbor(j + 1, "ij_forward", current_state)
                 pass
             if mode == "pairs":
-                res_line_matrix[j, ] = self.seek_neighbor(j + 1, "pairs")
+                res_line_matrix[j, ] = self.seek_neighbor(
+                    j + 1, "pairs", current_state)
             pass
 
         if mode == "jk_forward" or mode == "pairs":
@@ -255,22 +332,40 @@ class GridData:
 
         pass
 
-    def lookup(self, idx, mode="line_ij"):
+    def lookup(self, idx, mode="line_ij", current_state=True):
         """
+        # current_state = True => search the topology ignoring the filed lines
+        # current_state = False => search the topology using the original network 
+
         lookup the meanings of variables, including :
         1. [index] of variable.alpha[dim == linesalive] => pairs such as (1,2) 
         2. line parameters like r,x,z^2
 
         """
         if mode == "pairs":
-            return (self.copy_current_gridPara.iloc[[idx]]["node_i"].tolist()[0],
-                    self.copy_current_gridPara.iloc[[idx]]["node_j"].tolist()[0])
+            if current_state == True:
+                return (self.copy_current_gridPara.iloc[[idx]]["node_i"].tolist()[0],
+                        self.copy_current_gridPara.iloc[[idx]]["node_j"].tolist()[0])
+            else:
+                return (self.static_gridPara.iloc[[idx]]["node_i"].tolist()[0],
+                        self.static_gridPara.iloc.iloc[[idx]]["node_j"].tolist()[0])
         if mode == "line_ij":
-            r = self.current_gridPara_half_forward.iloc[[idx]]["r"].tolist()[0]
-            x = self.current_gridPara_half_forward.iloc[[idx]]["r"].tolist()[0]
-            z_sqr = r**2+x**2
-            return (self.current_gridPara_half_forward.iloc[[idx]]["node_i"].tolist()[0],
-                    self.current_gridPara_half_forward.iloc[[idx]]["node_j"].tolist()[0]), r, x, z_sqr
+            if current_state == True:
+                r = self.current_gridPara_half_forward.iloc[[idx]]["r"].tolist()[
+                    0]
+                x = self.current_gridPara_half_forward.iloc[[idx]]["r"].tolist()[
+                    0]
+                z_sqr = r**2+x**2
+                return (self.current_gridPara_half_forward.iloc[[idx]]["node_i"].tolist()[0],
+                        self.current_gridPara_half_forward.iloc[[idx]]["node_j"].tolist()[0]), r, x, z_sqr
+            else:
+                r = self.static_gridPara_half_forward.iloc[[idx]]["r"].tolist()[
+                    0]
+                x = self.static_gridPara_half_forward.iloc[[idx]]["r"].tolist()[
+                    0]
+                z_sqr = r**2+x**2
+                return (self.static_gridPara_half_forward.iloc[[idx]]["node_i"].tolist()[0],
+                        self.static_gridPara_half_forward.iloc[[idx]]["node_j"].tolist()[0]), r, x, z_sqr
         pass
 
     def make_fault_list(self):
@@ -282,9 +377,9 @@ class GridData:
         res = []
         for idx in list_fault_line:
             find = (self.current_gridPara.drop(
-                labels=range(37, 74), axis=0).iloc[[idx]]["node_i"].tolist()[0],
+                labels=range(37, 74), axis=0).iloc[[idx]]["node_i"].tolist()[0]-1,
                 self.current_gridPara.drop(
-                labels=range(37, 74), axis=0).iloc[[idx]]["node_j"].tolist()[0])
+                labels=range(37, 74), axis=0).iloc[[idx]]["node_j"].tolist()[0]-1)
             res.append(find)
         return res
 
@@ -300,7 +395,7 @@ class GridData:
         # print("list=", list(map(lambda x, y: int(
         #     x-y), list(self.current_gridPara_half_forward.loc[np.nonzero(res_alpha)]["line_no"]), np.ones(self.num_lines))))
         pass
-
+    
     def make_cash(self):
         """
         save the preserving variable such as P_mt(old), SOC(old)

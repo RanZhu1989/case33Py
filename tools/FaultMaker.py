@@ -29,11 +29,11 @@ class FaultMaker():
 
         pass
 
-    def make_fault(self, mode="N-1", island_allow=False, island_bus=False, loop=1e6):
+    def make_fault(self, mode="N-1", island_allow=False, island_bus=False, loop=100):
         """
         make fault sense of lines, buses ...
 
-        # searching loop is set to 1e6 as defult   
+        # searching loop is set to 100 as defult   
 
         - mode = "N-1" ; "N-2" ; "LPHI"
             * "LPHI" mode is an interface for meteorological disasters *
