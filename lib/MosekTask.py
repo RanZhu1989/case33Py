@@ -246,7 +246,8 @@ class MosekOPF:
             current_data.solution_loadshed = list(self.load_shed.level())
             current_data.map_lines(self.alpha.level())
         else:
-            print("No soultion!")
+            print("No soultion! Exit")
+            sys.exit()
 
         if debug == True:
             print(current_data.solution_breaker_state)

@@ -1,5 +1,6 @@
 from math import sqrt
 from os import terminal_size
+import sys
 import pandas as pd
 import numpy as np
 np.set_printoptions(threshold=1e6)
@@ -33,6 +34,12 @@ class GridData:
             labels=range(37, 74), axis=0).reset_index()
         self.static_gridPara_half_backward = self.static_gridPara.copy().drop(
             labels=range(0, 37), axis=0).reset_index()
+        # init cash
+        self.line_opened_cash = np.zeros(5)
+        self.line_fault_cash = np.zeros(2)
+        self.pin_cash = np.zeros(32)
+        self.pmt_cash = np.zeros(3)
+        self.qmt_cash = np.zeros(3)
         pass
 
     def make_step(self, step=0):
@@ -128,9 +135,10 @@ class GridData:
 
         # make list of fault line
         self.list_fault_line = self.make_fault_list()
-        self.list_fault_line_number= list(np.nonzero(self.current_event))[0]
-        self.list_fault_line_number= self.list_fault_line_number.astype(np.int32)
-        
+        self.list_fault_line_number = list(np.nonzero(self.current_event))[0]
+        self.list_fault_line_number = self.list_fault_line_number.astype(
+            np.int32)
+
         # get r_line alive
         self.list_r = self.current_gridPara_half_forward["r"]
 
@@ -173,12 +181,12 @@ class GridData:
         **pairs .= backward node <- j get (i,j) AND backward node -> j get (j,i)
         +RETURN:
             (list)mask_row : row of mask matrix for topology constraints building
-            
+
         **count .= count the number of neighbor nodes of the input node j
         +RETURN:
             (int)num_neighbor : scalar
 
-        
+
         """
         if current_state == True:
             num_cols = self.current_gridPara_half_forward.shape[0]
@@ -395,15 +403,6 @@ class GridData:
         # print("list=", list(map(lambda x, y: int(
         #     x-y), list(self.current_gridPara_half_forward.loc[np.nonzero(res_alpha)]["line_no"]), np.ones(self.num_lines))))
         pass
-    
-    def make_cash(self):
-        """
-        save the preserving variable such as P_mt(old), SOC(old)
-        """
-        pass
-
-    pass
-
 
 if __name__ == "__main__":
     '''
