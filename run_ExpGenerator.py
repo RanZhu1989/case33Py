@@ -6,9 +6,11 @@ from lib.PandapowerTask import *
 data_case33 = GridData()
 # create IEEE33BW network
 network = PandapowerTask()
-# set max step
-max_step = 8
-for s in range(0, max_step):
+# set start step
+start_step= 0
+# set end step
+end_step = 8
+for s in range(start_step, end_step):
     # gather current data by moving a step
     print("Step = ", s )
     data_case33.make_step(step=s)

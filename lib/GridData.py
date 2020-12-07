@@ -18,7 +18,7 @@ class GridData:
         """
         load\pv\wt\event\price = data.csv patch
         """
-
+        self.current_time = 0
         self.pathLoad = load
         self.pathPV = pv
         self.pathWT = wt
@@ -40,6 +40,11 @@ class GridData:
         self.pin_cash = np.zeros(32)
         self.pmt_cash = np.zeros(3)
         self.qmt_cash = np.zeros(3)
+        # Initializing optimizer results buffer
+        self.solution_breaker_state = np.zeros(37)
+        self.solution_mt_p = np.zeros(3)
+        self.solution_mt_q = np.zeros(3)
+        self.solution_loadshed = np.ones(32)
         pass
 
     def make_step(self, step=0):
@@ -54,7 +59,8 @@ class GridData:
         # type of event = int
         # type of price = float
         # type of grid parameters table = str
-
+        
+        self.current_time+=1
         self.current_load = 1000 * \
             np.loadtxt(self.pathLoad, dtype=complex,
                        delimiter=",", skiprows=step, max_rows=1)
@@ -142,11 +148,10 @@ class GridData:
         # get r_line alive
         self.list_r = self.current_gridPara_half_forward["r"]
 
-        # Initializing optimizer results buffer
         self.solution_breaker_state = np.zeros(37)
         self.solution_mt_p = np.zeros(3)
         self.solution_mt_q = np.zeros(3)
-        self.solution_loadshed = np.zeros(32)
+        self.solution_loadshed = np.ones(32)
 
         pass
 
@@ -403,6 +408,7 @@ class GridData:
         # print("list=", list(map(lambda x, y: int(
         #     x-y), list(self.current_gridPara_half_forward.loc[np.nonzero(res_alpha)]["line_no"]), np.ones(self.num_lines))))
         pass
+
 
 if __name__ == "__main__":
     '''
