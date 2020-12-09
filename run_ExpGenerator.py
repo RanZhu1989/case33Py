@@ -19,7 +19,7 @@ for s in range(start_step, end_step):
     problem.make_objective(data_case33)
     problem.solve(s, data_case33,log=False,debug=False)
     network.set_parameters(data_case33)
-    network.render(data_case33,plot=False)
+    network.render(data_case33,plot=True)
     if s>0:
         network.exp_out2file(data_case33)    
     network.make_cash(data_case33)

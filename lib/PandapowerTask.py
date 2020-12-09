@@ -29,6 +29,7 @@ class PandapowerTask():
         # sort the index
         self.net.load = self.net.load.sort_index()
         self.net.line = self.net.line.sort_index()
+        self.net.bus = self.net.bus.sort_index()
         self.loss_total = 0.0
         self.voltage_bias = 0.0
         self.blackout_power = 0.0
@@ -98,15 +99,21 @@ class PandapowerTask():
 
     def set_mt(self, data: GridData):
         """
-        set MTs as PQ nodes 
+        MTs have fixed output and make the node with fixed voltage at 1.0 pu.
         """
 
-        self.net.load["p_mw"][3] -= 1e-6 * data.solution_mt_p[0]
-        self.net.load["q_mvar"][3] -= 1e-6 * data.solution_mt_q[0]
-        self.net.load["p_mw"][7] -= 1e-6 * data.solution_mt_p[1]
-        self.net.load["q_mvar"][7] -= 1e-6 * data.solution_mt_q[1]
-        self.net.load["p_mw"][21] -= 1e-6 * data.solution_mt_p[2]
-        self.net.load["q_mvar"][21] -= 1e-6 * data.solution_mt_q[2]
+        self.net.load["p_mw"][2] -= 1e-6 * data.solution_mt_p[0]
+        self.net.load["q_mvar"][2] -= 1e-6 * data.solution_mt_q[0]
+        self.net.load["p_mw"][6] -= 1e-6 * data.solution_mt_p[1]
+        self.net.load["q_mvar"][6] -= 1e-6 * data.solution_mt_q[1]
+        self.net.load["p_mw"][20] -= 1e-6 * data.solution_mt_p[2]
+        self.net.load["q_mvar"][20] -= 1e-6 * data.solution_mt_q[2]
+        self.net.bus["max_vm_pu"][3]=1.0
+        self.net.bus["min_vm_pu"][3]=1.0
+        self.net.bus["max_vm_pu"][7]=1.0
+        self.net.bus["min_vm_pu"][7]=1.0
+        self.net.bus["max_vm_pu"][21]=1.0
+        self.net.bus["min_vm_pu"][21]=1.0
         pass
 
     def set_pv(self, data: GridData):
@@ -114,10 +121,10 @@ class PandapowerTask():
         set PVs as PQ nodes
         """
 
-        self.net.load["p_mw"][7] -= 1e-6 * np.real(data.current_pv[0])
-        self.net.load["q_mvar"][7] -= 1e-6 * np.imag(data.current_pv[0])
-        self.net.load["p_mw"][13] -= 1e-6 * np.real(data.current_pv[1])
-        self.net.load["q_mvar"][13] -= 1e-6 * np.imag(data.current_pv[1])
+        self.net.load["p_mw"][6] -= 1e-6 * np.real(data.current_pv[0])
+        self.net.load["q_mvar"][6] -= 1e-6 * np.imag(data.current_pv[0])
+        self.net.load["p_mw"][12] -= 1e-6 * np.real(data.current_pv[1])
+        self.net.load["q_mvar"][12] -= 1e-6 * np.imag(data.current_pv[1])
         pass
 
     def set_wt(self, data: GridData):
@@ -125,10 +132,10 @@ class PandapowerTask():
         set WTs as PQ nodes
         """
 
-        self.net.load["p_mw"][27] -= 1e-6 * np.real(data.current_wt[0])
-        self.net.load["q_mvar"][27] -= 1e-6 * np.imag(data.current_wt[0])
-        self.net.load["p_mw"][29] -= 1e-6 * np.real(data.current_wt[1])
-        self.net.load["q_mvar"][29] -= 1e-6 * np.imag(data.current_wt[1])
+        self.net.load["p_mw"][26] -= 1e-6 * np.real(data.current_wt[0])
+        self.net.load["q_mvar"][26] -= 1e-6 * np.imag(data.current_wt[0])
+        self.net.load["p_mw"][28] -= 1e-6 * np.real(data.current_wt[1])
+        self.net.load["q_mvar"][28] -= 1e-6 * np.imag(data.current_wt[1])
         pass
 
     def set_breaker(self, data: GridData):
@@ -149,6 +156,7 @@ class PandapowerTask():
         + (price_blackout) * load loss + (mt_cost) * total P_mt
         """
         print("负荷损失为", self.sum_blackout)
+        print("电压偏差指标为",self.voltage_bias)
         reward = (self.penalty_voltage * self.voltage_bias + data.price_loss *
                   self.loss_total * 1e3 + data.price_blackout * self.sum_blackout*1e3 +
                   data.current_price.tolist(
@@ -168,11 +176,6 @@ class PandapowerTask():
         """
         * run PF and calculate the reward *
         """
-        # print("load： \n")
-        # print(self.net.load)
-        # print("line： \n")
-        # print(self.net.line)
-
         # run PF
         pp.runpp(self.net)
         # calculate total power loss
@@ -181,22 +184,15 @@ class PandapowerTask():
         v_sum = 0
         for v in self.net.res_bus["vm_pu"]:
             if not np.isnan(v):
-                v_sum += max(0, v - max(self.net.res_bus["vm_pu"])) + \
-                    max(0, min(self.net.res_bus["vm_pu"]) - v)
+                v_sum += max(0, v - 1.05) + max(0, 0.95 - v)
                 pass
             pass
         self.voltage_bias = v_sum
         # calculate blackout loss
-        self.sum_blackout = round(sum(
-            self.net.res_bus["p_mw"][1:, ])*1000-1000*sum(self.net.load["p_mw"][0:, ]), 2)
-        #print("sum_blackout=",self.sum_blackout)
+        self.sum_blackout = round(10*sum(self.net.load["p_mw"][0:, ])-sum(
+            self.net.res_bus["p_mw"][1:, ])*1000, 2)
         # calculate reward
         self.reward = self.cal_reward(data)
-
-        # print(self.reward)
-        # print(self.net.res_bus)
-        # print(self.net.res_line)
-        # print(self.net.res_load)
         if plot == True:
             self.network_plot(data, mode="color_map")
             pass
@@ -293,6 +289,7 @@ class PandapowerTask():
                 #1. activate power of load in 32 nodes
                 #2. activate power output of PV and WT
                 #3. in future the ES will be introduced
+                !! NOT include MT !!
             + Toplogy is a set of 7 breakers 
             # in the worst case, 7 breakers could be opened (5 for normal constraint + 2 for fault) 
              (at present, we focus on N-1 and N-2 problems in IEEE33BW case) 
@@ -380,10 +377,10 @@ class PandapowerTask():
         # read grid data at t
         data.make_step(step=t)
         # set action
-        data.solution_mt_p=action[0:3]
-        data.solution_mt_q=action[3:6]
+        data.solution_mt_p=1000*action[0:3]
+        data.solution_mt_q=1000*action[3:6]
         data.solution_breaker_state=np.ones(37,dtype=int)
-        data.solution_breaker_state[list(action[7:12])]=0
+        data.solution_breaker_state[list(action[6:11])]=0
         # set parameters
         self.set_parameters(data)
         # executes the action
@@ -405,7 +402,10 @@ class PandapowerTask():
                 pass
             pass
         pin=1000*np.array(list(self.net.load.sort_index()["p_mw"]))
-        print(pin)
+        # drop the mt output
+        pin[2]+=action[0]
+        pin[6]+=action[1]
+        pin[20]+=action[2]
         # pin opened_line fault_line time  
         save_s=np.around(np.concatenate((pin,action[6:11],fault_line,np.array([t,])))).astype(int)
         data.make_step(step=t+1)

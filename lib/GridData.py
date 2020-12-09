@@ -26,8 +26,9 @@ class GridData:
         self.pathPrice = price
         self.current_gridPara = pd.read_csv(grid)
         self.num_lines = 37
+        # price = ￥ \kWh
         self.price_loss = 0.18
-        self.price_blackout = 10
+        self.price_blackout = 1000
         # make a static topology table
         self.static_gridPara = self.current_gridPara.copy().reset_index()
         self.static_gridPara_half_forward = self.static_gridPara.copy().drop(
@@ -47,8 +48,10 @@ class GridData:
         self.solution_loadshed = np.ones(32)
         pass
 
-    def make_step(self, step=0):
+    def make_step(self, step=0, noise=False):
         '''
+        # noise = True => adding Gaussian noise to simulate sensor sampling
+        
         read one row data from csv files 
 
         step = current row
@@ -61,13 +64,16 @@ class GridData:
         # type of grid parameters table = str
         
         self.current_time+=1
-        self.current_load = 1000 * \
+        noise_factor=1
+        if noise==True:
+            noise_factor=np.random.normal(1.0,0.05,size=3)
+        self.current_load = noise_factor*1000 * \
             np.loadtxt(self.pathLoad, dtype=complex,
                        delimiter=",", skiprows=step, max_rows=1)
-        self.current_pv = 1000 * \
+        self.current_pv =  noise_factor* 1000 * \
             np.loadtxt(self.pathPV, dtype=complex,
                        delimiter=",", skiprows=step, max_rows=1)
-        self.current_wt = 1000 * \
+        self.current_wt =  noise_factor* 1000 * \
             np.loadtxt(self.pathWT, dtype=complex,
                        delimiter=",", skiprows=step, max_rows=1)
         self.current_event = np.loadtxt(
@@ -148,6 +154,7 @@ class GridData:
         # get r_line alive
         self.list_r = self.current_gridPara_half_forward["r"]
 
+        # re-initializing optimizer results buffer
         self.solution_breaker_state = np.zeros(37)
         self.solution_mt_p = np.zeros(3)
         self.solution_mt_q = np.zeros(3)
@@ -275,7 +282,7 @@ class GridData:
                 # search in "ij" table
                 find_all_ij = self.copy_current_gridPara.loc[0:self.num_lines -
                                                              1][self.copy_current_gridPara.loc[0:self.num_lines-1]["node_i"].isin([node])]
-            # search in "ji" table
+                # search in "ji" table
                 find_all_ji = self.copy_current_gridPara.loc[self.num_lines:2*self.num_lines -
                                                              1][self.copy_current_gridPara.loc[self.num_lines:2*self.num_lines-1]["node_i"].isin([node])]
             else:
@@ -405,8 +412,6 @@ class GridData:
 
         self.solution_breaker_state[list(map(lambda x, y: int(
             x-y), list(self.current_gridPara_half_forward.loc[np.nonzero(res_alpha)]["line_no"]), np.ones(self.num_lines)))]=1
-        # print("list=", list(map(lambda x, y: int(
-        #     x-y), list(self.current_gridPara_half_forward.loc[np.nonzero(res_alpha)]["line_no"]), np.ones(self.num_lines))))
         pass
 
 
