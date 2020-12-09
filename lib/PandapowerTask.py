@@ -172,7 +172,7 @@ class PandapowerTask():
         list_de_energized = list(pt.unsupplied_buses(self.net))
         return num_de_energized, list_de_energized
 
-    def render(self, data: GridData, plot=True):
+    def render(self, data: GridData, plot=True, res_print=False,wait_time=None):
         """
         * run PF and calculate the reward *
         """
@@ -194,7 +194,11 @@ class PandapowerTask():
         # calculate reward
         self.reward = self.cal_reward(data)
         if plot == True:
-            self.network_plot(data, mode="color_map")
+            self.network_plot(data, mode="color_map",pause=wait_time)
+            pass
+        pass
+        if res_print==True:
+            print(self.net.res_bus)
             pass
         pass
 
@@ -270,8 +274,11 @@ class PandapowerTask():
         plt.plot()
         # put the fault lines list in the figure
         plt.annotate("fault lines: %s" % data.list_fault_line, (-2.3, -2.8))
-        plt.pause(pause)
-        plt.close()
+        if pause==0:
+            plt.show()
+        else:  
+            plt.pause(pause)
+            plt.close()
         pass
 
     def exp_out2file(self, data: GridData):

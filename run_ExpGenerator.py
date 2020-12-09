@@ -1,3 +1,4 @@
+from matplotlib.pyplot import pause
 from lib.MosekTask import *
 from lib.GridData import *
 from lib.PandapowerTask import *
@@ -19,7 +20,7 @@ for s in range(start_step, end_step):
     problem.make_objective(data_case33)
     problem.solve(s, data_case33,log=False,debug=False)
     network.set_parameters(data_case33)
-    network.render(data_case33,plot=True)
+    network.render(data_case33,plot=True,res_print=True,wait_time=10)
     if s>0:
         network.exp_out2file(data_case33)    
     network.make_cash(data_case33)

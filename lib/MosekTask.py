@@ -61,7 +61,7 @@ class MosekOPF:
         self.q_in = self.model.variable("q_in", 33)
 
         # big M
-        self.bigM = 1e6
+        self.bigM = 10e7
 
         pass
 
