@@ -1,6 +1,8 @@
 
 from os import write
 import time
+
+from networkx.generators.random_graphs import fast_gnp_random_graph
 from lib.GridData import *
 import pandapower as pp
 import pandapower.networks as pn
@@ -37,6 +39,13 @@ class PandapowerTask():
         self.reward = 0.0
         self.sum_blackout = 0.0
         self.start_time = self.make_time()
+        self.env_state_cash = np.array(40)
+        pass
+
+    def init_output(self):
+        """
+        docstring
+        """
         self.outpath = "./out/res_MDPC/"+self.start_time + "prim_MDPC.csv"
         # init the header of MDPC.csv
         with open(self.outpath, "a+") as file:
@@ -67,7 +76,7 @@ class PandapowerTask():
                 file.write("S(t+1)_opened_line_%i" % i + ",")
                 pass
             for i in range(1, 3):
-                file.write("S(t+1)_failed_line_%i" % i + ",")    
+                file.write("S(t+1)_failed_line_%i" % i + ",")
                 pass
             file.write("next_time")
             file.write("\n")
@@ -78,6 +87,9 @@ class PandapowerTask():
         """
         set parameters of the network
         """
+        self.net.ext_grid["max_p_mw"][0] = 100
+        self.net.ext_grid["max_q_mvar"][0] = 100
+        self.net.ext_grid["min_q_mvar"][0] = -100
         self.set_load(data)
         self.set_mt(data)
         self.set_pv(data)
@@ -108,12 +120,12 @@ class PandapowerTask():
         self.net.load["q_mvar"][6] -= 1e-6 * data.solution_mt_q[1]
         self.net.load["p_mw"][20] -= 1e-6 * data.solution_mt_p[2]
         self.net.load["q_mvar"][20] -= 1e-6 * data.solution_mt_q[2]
-        self.net.bus["max_vm_pu"][3]=1.0
-        self.net.bus["min_vm_pu"][3]=1.0
-        self.net.bus["max_vm_pu"][7]=1.0
-        self.net.bus["min_vm_pu"][7]=1.0
-        self.net.bus["max_vm_pu"][21]=1.0
-        self.net.bus["min_vm_pu"][21]=1.0
+        self.net.bus["max_vm_pu"][3] = 1.0
+        self.net.bus["min_vm_pu"][3] = 1.0
+        self.net.bus["max_vm_pu"][7] = 1.0
+        self.net.bus["min_vm_pu"][7] = 1.0
+        self.net.bus["max_vm_pu"][21] = 1.0
+        self.net.bus["min_vm_pu"][21] = 1.0
         pass
 
     def set_pv(self, data: GridData):
@@ -156,7 +168,7 @@ class PandapowerTask():
         + (price_blackout) * load loss + (mt_cost) * total P_mt
         """
         print("负荷损失为", self.sum_blackout)
-        print("电压偏差指标为",self.voltage_bias)
+        print("电压偏差指标为", self.voltage_bias)
         reward = (self.penalty_voltage * self.voltage_bias + data.price_loss *
                   self.loss_total * 1e3 + data.price_blackout * self.sum_blackout*1e3 +
                   data.current_price.tolist(
@@ -172,7 +184,7 @@ class PandapowerTask():
         list_de_energized = list(pt.unsupplied_buses(self.net))
         return num_de_energized, list_de_energized
 
-    def render(self, data: GridData, plot=True, res_print=False,wait_time=None):
+    def render(self, data: GridData, plot=True, res_print=False, wait_time=None,logger=False):
         """
         * run PF and calculate the reward *
         """
@@ -189,17 +201,21 @@ class PandapowerTask():
             pass
         self.voltage_bias = v_sum
         # calculate blackout loss
-        self.sum_blackout = round(10*sum(self.net.load["p_mw"][0:, ])-sum(
-            self.net.res_bus["p_mw"][1:, ])*1000, 2)
+        self.sum_blackout = round(10*(sum(self.net.load["p_mw"][0:, ])-sum(
+            self.net.res_load["p_mw"][0:, ]))*1000, 2)
         # calculate reward
         self.reward = self.cal_reward(data)
         if plot == True:
-            self.network_plot(data, mode="color_map",pause=wait_time)
+            self.network_plot(data, mode="color_map", pause=wait_time)
             pass
         pass
-        if res_print==True:
+        if res_print == True:
             print(self.net.res_bus)
             pass
+        if logger==True:
+            self.log_data(data)
+            pass
+    
         pass
 
     def reset(self):
@@ -274,13 +290,42 @@ class PandapowerTask():
         plt.plot()
         # put the fault lines list in the figure
         plt.annotate("fault lines: %s" % data.list_fault_line, (-2.3, -2.8))
-        if pause==0:
+        if pause == 0:
             plt.show()
-        else:  
+        else:
             plt.pause(pause)
             plt.close()
         pass
-
+    def log_data(self,data:GridData):
+        """
+        log node voltage, network loss and shed load
+        """
+        
+        path_log_voltage="./log/voltage/"+self.start_time + ".csv"
+        path_log_loss="./log/loss/"+self.start_time + ".csv"
+        path_log_shed="./log/shed/"+self.start_time + ".csv"
+        with open(path_log_voltage,"a+") as file:
+            for i in range(32):
+                if i <31:
+                    file.write(str(list(self.net.res_bus.sort_index()["vm_pu"])[i])+",")
+                else:
+                    file.write(str(list(self.net.res_bus.sort_index()["vm_pu"])[i])+"\n")
+                pass
+            pass
+        with open(path_log_loss,"a+") as file:
+            file.write(str(self.loss_total)+"\n")
+            pass
+        with open(path_log_shed,"a+") as file:
+            for i in range(32):
+                if i <31:
+                    file.write(str(data.solution_loadshed[i])+",")
+                else:
+                    file.write(str(data.solution_loadshed[i])+"\n")
+                pass
+            pass
+            
+            pass
+        pass
     def exp_out2file(self, data: GridData):
         """
         save MDP chain (S_t,A_t,R_t,S_t+1) to csv file
@@ -293,10 +338,10 @@ class PandapowerTask():
 
         ** S = { P_i Toplogy, Fault_lines) }  dim = 32 + 5 + 2 + 1 = 40
             + P_i is the aggregation of:
-                #1. activate power of load in 32 nodes
-                #2. activate power output of PV and WT
+                #1. activate power of LOAD in 32 nodes
+                #2. activate power output of DGs
                 #3. in future the ES will be introduced
-                !! NOT include MT !!
+
             + Toplogy is a set of 7 breakers 
             # in the worst case, 7 breakers could be opened (5 for normal constraint + 2 for fault) 
              (at present, we focus on N-1 and N-2 problems in IEEE33BW case) 
@@ -369,7 +414,7 @@ class PandapowerTask():
             pass
         pass
 
-    def env_step(self, t,data: GridData,action:np.ndarray):
+    def env_step(self, t, data: GridData, action: np.ndarray,debug=False):
         """
         S1. read current grid data using class GridData;
         S2. data.soultion_xxx covered by input action;
@@ -384,59 +429,35 @@ class PandapowerTask():
         # read grid data at t
         data.make_step(step=t)
         # set action
-        data.solution_mt_p=1000*action[0:3]
-        data.solution_mt_q=1000*action[3:6]
-        data.solution_breaker_state=np.ones(37,dtype=int)
-        data.solution_breaker_state[list(action[6:11])]=0
+        data.solution_mt_p = 1000*action[0:3]
+        data.solution_mt_q = 1000*action[3:6]
+        data.solution_breaker_state = np.ones(37, dtype=int)
+        data.solution_breaker_state[list(action[6:11])] = 0
         # set parameters
         self.set_parameters(data)
         # executes the action
         # reward has been calculated
-        self.render(data,plot=False)
-        # save reward
-        save_reward=self.reward
-        fault_line=np.zeros(2,dtype=int)
-        fault_line_next=np.zeros(2,dtype=int)
-        if len(data.list_fault_line_number) == 0:
-            fault_line = np.pad(
-                data.list_fault_line_number, (0, 2), mode="constant", constant_values=(-99))
+        if debug==True:
+            self.render(data, plot=True,res_print=True,wait_time=5)
         else:
-            if len(data.list_fault_line_number) == 1:
-                fault_line = np.pad(
-                    data.list_fault_line_number, (0, 1), mode="constant", constant_values=(-99))
-            else:
-                fault_line = data.list_fault_line_number
-                pass
-            pass
-        pin=1000*np.array(list(self.net.load.sort_index()["p_mw"]))
-        # drop the mt output
-        pin[2]+=action[0]
-        pin[6]+=action[1]
-        pin[20]+=action[2]
-        # pin opened_line fault_line time  
-        save_s=np.around(np.concatenate((pin,action[6:11],fault_line,np.array([t,])))).astype(int)
+            self.render(data, plot=False)
+        # save reward
+        save_reward = self.reward
+        save_s = self.env_state_cash.copy()
         data.make_step(step=t+1)
         self.set_load(data)
-        self.set_mt(data)
         self.set_pv(data)
         self.set_wt(data)
-        pin_next=1000*np.array(list(self.net.load.sort_index()["p_mw"]))
-        if len(data.list_fault_line_number) == 0:
-            fault_line_next = np.pad(
-                data.list_fault_line_number, (0, 2), mode="constant", constant_values=(-99))
-        else:
-            if len(data.list_fault_line_number) == 1:
-                fault_line_next = np.pad(
-                    data.list_fault_line_number, (0, 1), mode="constant", constant_values=(-99))
-            else:
-                fault_line_next = data.list_fault_line_number
-                pass
-            pass
+        pin_next = 1000*np.array(list(self.net.load.sort_index()["p_mw"]))
+        pin_next[2] -= action[0]
+        pin_next[6] -= action[1]
+        pin_next[20] -= action[2]
         # pin opened_line fault_line time
-        save_s_next=np.around(np.concatenate((pin_next,action[6:11],fault_line_next,np.array([t+1,])))).astype(int)
-        
-        return save_s,save_reward,save_s_next
-
+        save_s_next = np.around(np.concatenate(
+            (pin_next, action[6:11], data.list_fault_line_number, np.array([t+1, ])))).astype(int)
+        self.env_state_cash=save_s_next
+        self.reset()
+        return save_s, save_reward, save_s_next
 
     def make_time(self):
         """
@@ -460,25 +481,11 @@ class PandapowerTask():
 
         # save the current line state using 5 opened breakers
         if len(list(np.nonzero(~data.solution_breaker_state.astype(bool))[0])) != 5:
+            print("breaker state error! Exit!")
             sys.exit()
         data.line_opened_cash = np.nonzero(
             ~data.solution_breaker_state.astype(bool))[0]
-
-        # save the current fault line using pad method
-        # to distinguish between noramal state and fault state, we use -99 as a place holder
-
-        if len(data.list_fault_line_number) == 0:
-            data.line_fault_cash = np.pad(
-                data.list_fault_line_number, (0, 2), mode="constant", constant_values=(-99))
-        else:
-            if len(data.list_fault_line_number) == 1:
-                data.line_fault_cash = np.pad(
-                    data.list_fault_line_number, (0, 1), mode="constant", constant_values=(-99))
-            else:
-                data.line_fault_cash = data.list_fault_line_number
-                pass
-            pass
-
+        data.line_fault_cash = data.list_fault_line_number
         # save the current P_in
         data.pin_cash = np.array(
             self.net.res_bus.sort_index().drop(0, 0)["p_mw"])
@@ -490,6 +497,28 @@ class PandapowerTask():
         pass
 
     pass
+
+    def init_cash(self, data: GridData,env_mode=False,start=0):
+        """
+        initialization the cash for the first time
+        we assume that the network works in normal condition
+        """
+        if env_mode==False:
+            data.line_opened_cash = np.array([32, 33, 34, 35, 36])
+            data.line_fault_cash = np.array([-99, -99])
+            data.pin_cash = np.array(
+                self.net.load.sort_index()["p_mw"])
+        else:
+            data.make_step(step=start)
+            self.set_load(data)
+            self.set_pv(data)
+            self.set_wt(data)
+            pin = 1000*np.array(list(self.net.load.sort_index()["p_mw"]))
+            self.env_state_cash=np.around(np.concatenate(
+            (pin, np.array([32, 33, 34, 35, 36]), np.array([-99, -99]), np.array([0, ])))).astype(int)
+            pass
+
+        pass
 
 
 if __name__ == "__main__":

@@ -28,7 +28,7 @@ class GridData:
         self.num_lines = 37
         # price = ￥ \kWh
         self.price_loss = 0.18
-        self.price_blackout = 1000
+        self.price_blackout = 100
         # make a static topology table
         self.static_gridPara = self.current_gridPara.copy().reset_index()
         self.static_gridPara_half_forward = self.static_gridPara.copy().drop(
@@ -38,20 +38,21 @@ class GridData:
         # init cash
         self.line_opened_cash = np.zeros(5)
         self.line_fault_cash = np.zeros(2)
+        # WARRING : MT output injection is not included in pin
         self.pin_cash = np.zeros(32)
         self.pmt_cash = np.zeros(3)
         self.qmt_cash = np.zeros(3)
-        # Initializing optimizer results buffer
-        self.solution_breaker_state = np.zeros(37)
-        self.solution_mt_p = np.zeros(3)
-        self.solution_mt_q = np.zeros(3)
-        self.solution_loadshed = np.ones(32)
+        # # Initializing optimizer results buffer
+        # self.solution_breaker_state = np.zeros(37)
+        # self.solution_mt_p = np.zeros(3)
+        # self.solution_mt_q = np.zeros(3)
+        # self.solution_loadshed = np.ones(32)
         pass
 
     def make_step(self, step=0, noise=False):
         '''
         # noise = True => adding Gaussian noise to simulate sensor sampling
-        
+
         read one row data from csv files 
 
         step = current row
@@ -62,18 +63,18 @@ class GridData:
         # type of event = int
         # type of price = float
         # type of grid parameters table = str
-        
-        self.current_time+=1
-        noise_factor=1
-        if noise==True:
-            noise_factor=np.random.normal(1.0,0.05,size=3)
+
+        self.current_time += 1
+        noise_factor = 1
+        if noise == True:
+            noise_factor = np.random.normal(1.0, 0.05, size=3)
         self.current_load = noise_factor*1000 * \
             np.loadtxt(self.pathLoad, dtype=complex,
                        delimiter=",", skiprows=step, max_rows=1)
-        self.current_pv =  noise_factor* 1000 * \
+        self.current_pv = noise_factor * 1000 * \
             np.loadtxt(self.pathPV, dtype=complex,
                        delimiter=",", skiprows=step, max_rows=1)
-        self.current_wt =  noise_factor* 1000 * \
+        self.current_wt = noise_factor * 1000 * \
             np.loadtxt(self.pathWT, dtype=complex,
                        delimiter=",", skiprows=step, max_rows=1)
         self.current_event = np.loadtxt(
@@ -147,9 +148,19 @@ class GridData:
 
         # make list of fault line
         self.list_fault_line = self.make_fault_list()
-        self.list_fault_line_number = list(np.nonzero(self.current_event))[0]
+        self.list_fault_line_number = np.array(
+            list(np.nonzero(self.current_event))[0])
         self.list_fault_line_number = self.list_fault_line_number.astype(
             np.int32)
+        # save the current fault line using pad method
+        # to distinguish between noramal state and fault state, we use -99 as a place holder
+        if len(self.list_fault_line_number) == 0:
+            self.list_fault_line_number = np.pad(
+                self.list_fault_line_number, (0, 2), mode="constant", constant_values=(-99))
+        else:
+            if len(self.list_fault_line_number) == 1:
+                self.list_fault_line_number = np.pad(
+                    self.list_fault_line_number, (0, 1), mode="constant", constant_values=(-99))
 
         # get r_line alive
         self.list_r = self.current_gridPara_half_forward["r"]

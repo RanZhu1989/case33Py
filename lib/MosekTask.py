@@ -61,7 +61,7 @@ class MosekOPF:
         self.q_in = self.model.variable("q_in", 33)
 
         # big M
-        self.bigM = 10e7
+        self.bigM = 1e7
 
         pass
 
@@ -174,16 +174,14 @@ class MosekOPF:
 
         # output of MTs
         st_pmt = self.model.constraint(self.p_mt, Domain.inRange(
-            [750e3, 125e3, 375e3], [3e6, 5e5, 1.5e6]))
+            [0, 0, 0], [1e6, 1e6, 1e6]))
         st_qmt = self.model.constraint(self.q_mt, Domain.inRange(
-            [-1.5e6, -2.5e5, -1e6], [1.5e6, 2.5e5, 1e6]))
+            [0, 0, 0], [0.5e6, 0.5e6, 0.5e6]))
 
         # substaion
         # v_sub = 1.0 pu
         st_sub1 = self.model.constraint(
             self.v_sqr.index(0), Domain.equalsTo(12.66e3 ** 2))
-        st_sub2 = self.model.constraint(
-            self.p_in.index(0), Domain.lessThan(0.0))
 
     def make_objective(self, current_data: GridData):
         """
@@ -220,7 +218,7 @@ class MosekOPF:
 
 
         """
-        self.model.setSolverParam("intpntCoTolRelGap", 1e-2)
+        self.model.setSolverParam("intpntCoTolRelGap", 5e-1)
         self.model.solve()
 
         # write the log file
@@ -232,6 +230,8 @@ class MosekOPF:
             print(str(self.model.getProblemStatus()))
             print(str(self.model.getPrimalSolutionStatus()))
             print(list(self.alpha.level()))
+            print(self.load_shed.level())
+            print([sqrt(i)/12.66e3 for i in list(self.v_sqr.level())])
             print(self.p_mt.level())
             print(self.q_mt.level())
             pass
@@ -259,6 +259,10 @@ class MosekOPF:
     pass
 
 
+'''
+!!! DONT USE !!!
+MosekDNR Class is still in work progress
+'''
 class MosekDNR(MosekOPF):
     '''
     inherited from class MosekOPF

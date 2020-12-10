@@ -49,9 +49,9 @@ class FaultMaker():
         """
         # reset net
         self.reflash_net()
-        res_sense = np.zeros((loop,37), dtype=int)
+        res_sense = np.zeros((loop, 37), dtype=int)
         if mode == "N-1":
-            s=0
+            s = 0
             for i in range(loop):
                 self.reflash_net()
                 faultlist = random.randint(1, 36)
@@ -59,20 +59,21 @@ class FaultMaker():
                     if island_bus == False:
                         self.prim_net.line["in_service"][faultlist] = False
                         if len(pt.unsupplied_buses(self.prim_net)) == 0:
-                            res_sense[s,faultlist] = 1
-                            s+=1
+                            res_sense[s, faultlist] = 1
+                            s += 1
                             pass
                         pass
                     pass
                 pass
             # remove duplicate lines
-            res_sense=np.unique(res_sense,axis=0)
-            res_sense=np.delete(res_sense,[-1],axis=0)
-            np.savetxt("./out/res_faultmaker/result.csv", res_sense,fmt="%i", delimiter=",")
+            res_sense = np.unique(res_sense, axis=0)
+            res_sense = np.delete(res_sense, [-1], axis=0)
+            np.savetxt("./out/res_faultmaker/result.csv",
+                       res_sense, fmt="%i", delimiter=",")
             pass
 
         if mode == "N-2":
-            s=0
+            s = 0
             for i in range(loop):
                 self.reflash_net()
                 faultlist = []
@@ -87,16 +88,17 @@ class FaultMaker():
                         self.prim_net.line["in_service"][faultlist[0]] = False
                         self.prim_net.line["in_service"][faultlist[1]] = False
                         if len(pt.unsupplied_buses(self.prim_net)) == 0:
-                            res_sense[s,faultlist] = 1
-                            s+=1
+                            res_sense[s, faultlist] = 1
+                            s += 1
                             pass
                         pass
                     pass
                 pass
             # remove duplicate lines
-            res_sense=np.unique(res_sense,axis=0)
-            res_sense=np.delete(res_sense,[-1],axis=0)
-            np.savetxt("./out/res_faultmaker/result.csv", res_sense,fmt="%i", delimiter=",")
+            res_sense = np.unique(res_sense, axis=0)
+            res_sense = np.delete(res_sense, [-1], axis=0)
+            np.savetxt("./out/res_faultmaker/result.csv",
+                       res_sense, fmt="%i", delimiter=",")
             pass
         pass
 
@@ -111,14 +113,13 @@ class FaultMaker():
             self.prim_net.line["in_service"][i] = True
             pass
         pass
-    
-    def check_radial(self,data:GridData):
+
+    def check_radial(self, data: GridData):
         """
         docstring
         """
         pass
-    
-    
+
     pass
 
 
