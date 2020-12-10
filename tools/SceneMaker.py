@@ -10,7 +10,7 @@ class ScenceMaker:
         # load the fault scenarios
         ns1 = np.loadtxt("./tools/Nsub1result.csv", dtype=int, delimiter=",")
         ns2 = np.loadtxt("./tools/Nsub2result.csv", dtype=int, delimiter=",")
-        event = np.zeros((12865, 37), dtype=int)
+        event = np.zeros((12864, 37), dtype=int)
         pass
 
     def make(self, ns1_pr=0.1, ns2_pr=0.01):
@@ -18,7 +18,7 @@ class ScenceMaker:
         docstring
         """
         # init the event table
-        event = np.zeros((12865, 37), dtype=int)
+        event = np.zeros((12864, 37), dtype=int)
         #
         fault_rate_ns1 = ns1_pr
         fault_rate_ns2 = ns2_pr
@@ -27,7 +27,7 @@ class ScenceMaker:
         # load the fault scenarios
         ns1 = np.loadtxt("./tools/Nsub1result.csv", dtype=int, delimiter=",")
         ns2 = np.loadtxt("./tools/Nsub2result.csv", dtype=int, delimiter=",")
-        for row in range(12865):
+        for row in range(12864):
             temp_row = np.zeros(37, dtype=int)
             i = np.random.choice([0, 1, 2], p=pr)
             if i == 1:
