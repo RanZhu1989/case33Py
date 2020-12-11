@@ -28,7 +28,7 @@ class GridData:
         self.num_lines = 37
         # price = ￥ \kWh
         self.price_loss = 0.18
-        self.price_blackout = 100
+        self.price_blackout = 10
         # make a static topology table
         self.static_gridPara = self.current_gridPara.copy().reset_index()
         self.static_gridPara_half_forward = self.static_gridPara.copy().drop(
@@ -64,7 +64,7 @@ class GridData:
         # type of price = float
         # type of grid parameters table = str
 
-        self.current_time += 1
+        self.current_time =step
         noise_factor = 1
         if noise == True:
             noise_factor = np.random.normal(1.0, 0.05, size=3)
@@ -420,7 +420,9 @@ class GridData:
         closed = 1
         opened \ failed = 0 
         """
-
+        for i in range(36):
+            res_alpha[i]=int(round(res_alpha[i]))
+            pass
         self.solution_breaker_state[list(map(lambda x, y: int(
             x-y), list(self.current_gridPara_half_forward.loc[np.nonzero(res_alpha)]["line_no"]), np.ones(self.num_lines)))]=1
         pass

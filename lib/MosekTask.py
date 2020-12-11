@@ -221,7 +221,7 @@ class MosekOPF:
 
 
         """
-        self.model.setSolverParam("intpntCoTolRelGap", 5e-1)
+        self.model.setSolverParam("intpntCoTolRelGap", 1e-1)
         self.model.solve()
 
         # write the log file
@@ -248,6 +248,7 @@ class MosekOPF:
                 current_data.solution_mt_q, 2)
             current_data.solution_loadshed = list(self.load_shed.level())
             current_data.map_lines(self.alpha.level())
+            print(current_data.solution_breaker_state)
         else:
             print("No soultion! Exit")
             sys.exit()

@@ -1,8 +1,6 @@
 
 from os import write
 import time
-
-from networkx.generators.random_graphs import fast_gnp_random_graph
 from lib.GridData import *
 import pandapower as pp
 import pandapower.networks as pn
@@ -35,7 +33,7 @@ class PandapowerTask():
         self.loss_total = 0.0
         self.voltage_bias = 0.0
         self.blackout_power = 0.0
-        self.penalty_voltage = 2
+        self.penalty_voltage = 0.5
         self.reward = 0.0
         self.sum_blackout = 0.0
         self.start_time = self.make_time()
@@ -120,12 +118,12 @@ class PandapowerTask():
         self.net.load["q_mvar"][6] -= 1e-6 * data.solution_mt_q[1]
         self.net.load["p_mw"][20] -= 1e-6 * data.solution_mt_p[2]
         self.net.load["q_mvar"][20] -= 1e-6 * data.solution_mt_q[2]
-        self.net.bus["max_vm_pu"][3] = 1.0
-        self.net.bus["min_vm_pu"][3] = 1.0
-        self.net.bus["max_vm_pu"][7] = 1.0
-        self.net.bus["min_vm_pu"][7] = 1.0
-        self.net.bus["max_vm_pu"][21] = 1.0
-        self.net.bus["min_vm_pu"][21] = 1.0
+        # self.net.bus["max_vm_pu"][3] = 1.0
+        # self.net.bus["min_vm_pu"][3] = 1.0
+        # self.net.bus["max_vm_pu"][7] = 1.0
+        # self.net.bus["min_vm_pu"][7] = 1.0
+        # self.net.bus["max_vm_pu"][21] = 1.0
+        # self.net.bus["min_vm_pu"][21] = 1.0
         pass
 
     def set_pv(self, data: GridData):
@@ -170,9 +168,9 @@ class PandapowerTask():
         print("Load Shed = ", self.sum_blackout)
         print("Voltage Deviation", self.voltage_bias)
         reward = (self.penalty_voltage * self.voltage_bias + data.price_loss *
-                  self.loss_total * 1e3 + data.price_blackout * self.sum_blackout*1e3 +
+                  self.loss_total * 1e3 + data.price_blackout * self.sum_blackout +
                   data.current_price.tolist(
-                  )[1]*(data.solution_mt_p.tolist()[0]+data.solution_mt_p.tolist()[1])*1e-3)*-1
+                  )[1]*sum(data.solution_mt_p)*1e-3)*-1
         return round(reward, 2)
 
     def check_energized(self):
@@ -326,8 +324,7 @@ class PandapowerTask():
             pass
         with open(path_log_loss,"a+") as file:
             file.write(str(self.loss_total)+",")
-            file.write(str(round(self.loss_total*100/sum(
-            self.net.res_load["p_mw"][0:, ]),2)))
+            file.write(str(round(self.loss_total*100 / ( 1e-6*np.real(np.sum(data.current_load)) ),2))+"\n")
             pass
         with open(path_log_shed,"a+") as file:
             for i in range(32):
@@ -412,9 +409,12 @@ class PandapowerTask():
             # save R_t
             file.write(str(self.reward) + ",")
             # save S_{t+1} dim=39
+            temp_pin_next=np.array(self.net.res_bus.sort_index().drop(0, 0)["p_mw"])
+            temp_pin_next[2]+=data.solution_mt_p[0]*1e-6
+            temp_pin_next[6]+=data.solution_mt_p[1]*1e-6
+            temp_pin_next[20]+=data.solution_mt_p[2]*1e-6
             for i in range(32):
-                file.write(str(
-                    int(np.array(self.net.res_bus.sort_index().drop(0, 0)["p_mw"])[i]*1000)) + ",")
+                file.write(str(int(temp_pin_next[i]*1000)) + ",")
                 pass
             for i in range(5):
                 file.write(
@@ -440,6 +440,8 @@ class PandapowerTask():
         return S_t, R_{t+1}, S_{t+1}
         * used for online traning mode
         """
+        # set flag_gameover
+        flag=False
         # read grid data at t
         data.make_step(step=t)
         # set action
@@ -455,6 +457,9 @@ class PandapowerTask():
             self.render(data, plot=True,res_print=True,wait_time=5)
         else:
             self.render(data, plot=False)
+        # if number of outage node > 0, game over
+        if  len(np.nonzero(self.net.res_load.sort_index()["p_mw"].tolist())[0])<33:
+            flag=True
         # save reward
         save_reward = self.reward
         save_s = self.env_state_cash.copy()
@@ -463,15 +468,15 @@ class PandapowerTask():
         self.set_pv(data)
         self.set_wt(data)
         pin_next = 1000*np.array(list(self.net.load.sort_index()["p_mw"]))
-        pin_next[2] -= action[0]
-        pin_next[6] -= action[1]
-        pin_next[20] -= action[2]
+        # pin_next[2] -= action[0]
+        # pin_next[6] -= action[1]
+        # pin_next[20] -= action[2]
         # pin opened_line fault_line time
         save_s_next = np.around(np.concatenate(
             (pin_next, action[6:11], data.list_fault_line_number, np.array([t+1, ])))).astype(int)
         self.env_state_cash=save_s_next
         self.reset()
-        return save_s, save_reward, save_s_next
+        return save_s, save_reward, save_s_next, flag
 
     def make_time(self):
         """
@@ -503,6 +508,9 @@ class PandapowerTask():
         # save the current P_in
         data.pin_cash = np.array(
             self.net.res_bus.sort_index().drop(0, 0)["p_mw"])
+        data.pin_cash[2]+= data.solution_mt_p[0]*1e-6
+        data.pin_cash[6]+= data.solution_mt_p[1]*1e-6
+        data.pin_cash[20]+= data.solution_mt_p[2]*1e-6
 
         # save mt output
         data.pmt_cash = data.solution_mt_p
@@ -522,6 +530,10 @@ class PandapowerTask():
             data.line_fault_cash = np.array([-99, -99])
             data.pin_cash = np.array(
                 self.net.load.sort_index()["p_mw"])
+            data.pin_cash[2]+= data.solution_mt_p[0]*1e-6
+            data.pin_cash[6]+= data.solution_mt_p[1]*1e-6
+            data.pin_cash[20]+= data.solution_mt_p[2]*1e-6
+            
         else:
             data.make_step(step=start)
             self.set_load(data)

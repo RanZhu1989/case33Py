@@ -19,11 +19,11 @@ for s in range(start_step, end_step):
     problem = MosekOPF(data_case33)
     problem.make_constraints(data_case33)
     problem.make_objective(data_case33)
-    problem.solve(s, data_case33,log=False,debug=True)
+    problem.solve(s, data_case33,log=False,debug=False)
     network.set_parameters(data_case33)
-    network.render(data_case33,plot=True,res_print=True,wait_time=5,logger=True)
     if s==start_step:
         network.init_cash(data_case33)
+    network.render(data_case33,plot=False,res_print=False,wait_time=5,logger=True)
     network.exp_out2file(data_case33)
     network.make_cash(data_case33)
     network.reset()
