@@ -180,8 +180,11 @@ class MosekOPF:
 
         # substaion
         # v_sub = 1.0 pu
+        # p_in \ q_in of substation < 0  
         st_sub1 = self.model.constraint(
             self.v_sqr.index(0), Domain.equalsTo(12.66e3 ** 2))
+        st_sub2 = self.model.constraint(self.p_in.index(0),Domain.lessThan(0.0))
+        st_sub3 = self.model.constraint(self.p_in.index(0),Domain.lessThan(0.0))
 
     def make_objective(self, current_data: GridData):
         """

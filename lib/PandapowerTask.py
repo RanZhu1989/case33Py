@@ -35,7 +35,7 @@ class PandapowerTask():
         self.loss_total = 0.0
         self.voltage_bias = 0.0
         self.blackout_power = 0.0
-        self.penalty_voltage = 1.0
+        self.penalty_voltage = 2
         self.reward = 0.0
         self.sum_blackout = 0.0
         self.start_time = self.make_time()
@@ -167,8 +167,8 @@ class PandapowerTask():
         Reward = (penalty coefficient) * bias of voltage + (pirce_loss) * total power loss 
         + (price_blackout) * load loss + (mt_cost) * total P_mt
         """
-        print("负荷损失为", self.sum_blackout)
-        print("电压偏差指标为", self.voltage_bias)
+        print("Load Shed = ", self.sum_blackout)
+        print("Voltage Deviation", self.voltage_bias)
         reward = (self.penalty_voltage * self.voltage_bias + data.price_loss *
                   self.loss_total * 1e3 + data.price_blackout * self.sum_blackout*1e3 +
                   data.current_price.tolist(
@@ -201,8 +201,7 @@ class PandapowerTask():
             pass
         self.voltage_bias = v_sum
         # calculate blackout loss
-        self.sum_blackout = round(10*(sum(self.net.load["p_mw"][0:, ])-sum(
-            self.net.res_load["p_mw"][0:, ]))*1000, 2)
+        self.sum_blackout = self.cal_blackout(data)
         # calculate reward
         self.reward = self.cal_reward(data)
         if plot == True:
@@ -211,13 +210,27 @@ class PandapowerTask():
         pass
         if res_print == True:
             print(self.net.res_bus)
+            print("Network Loss = ",self.loss_total*1000)
+            print("Loss Rate = ",round(self.loss_total*100 / ( 1e-6*np.real(np.sum(data.current_load)) ),2))
             pass
         if logger==True:
             self.log_data(data)
             pass
     
         pass
-
+    
+    def cal_blackout(self,data:GridData):
+        """
+        calculate of outage load
+        """
+        print("shed_node = ",self.net.res_load.sort_index())
+        blackoutnode=np.setdiff1d(np.arange(0,32),np.nonzero(self.net.res_load.sort_index()["p_mw"].tolist())[0])
+        print("outage_node = ",blackoutnode)
+        if len(blackoutnode)==0:
+            return 0
+        else:
+            return np.real(sum(data.current_load[blackoutnode]))*1e-3
+    
     def reset(self):
         """
         reset the network
@@ -263,8 +276,7 @@ class PandapowerTask():
             self.net.bus_geodata.drop(self.net.bus_geodata.index, inplace=True)
             self.net.line_geodata.drop(
                 self.net.line_geodata.index, inplace=True)
-            voltage_map = [((0.975, 0.985), "blue"),
-                           ((0.985, 1.0), "green"), ((1.0, 1.03), "red")]
+            voltage_map = [((0.00, 0.90), "lime"),((0.90, 0.950), "g"),((0.950, 1.05), "b"),((1.05, 1.1), "m"),((1.1, 1.5), "r")]
             cmap, norm = pplot.cmap_discrete(voltage_map)
             pplot.create_generic_coordinates(self.net)
             pplot.fuse_geodata(self.net)
@@ -313,7 +325,9 @@ class PandapowerTask():
                 pass
             pass
         with open(path_log_loss,"a+") as file:
-            file.write(str(self.loss_total)+"\n")
+            file.write(str(self.loss_total)+",")
+            file.write(str(round(self.loss_total*100/sum(
+            self.net.res_load["p_mw"][0:, ]),2)))
             pass
         with open(path_log_shed,"a+") as file:
             for i in range(32):

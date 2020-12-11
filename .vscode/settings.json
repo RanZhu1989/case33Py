@@ -1,7 +1,0 @@
-{
-    "python.pythonPath": "D:\\anaconda3\\envs\\tc\\python.exe",
-    "python.formatting.provider": "autopep8",
-    "cSpell.ignoreWords": [
-        "py"
-    ]
-}

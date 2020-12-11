@@ -1,5 +1,8 @@
-lib/__pycache__/functions.cpython-37.pyc
-/__pycache__/
+/lib/__pycache__/
+*.pyc
+/.vscode
 *.xml
 test.py
-/.idea/
+./gitignore
+/log
+/out
