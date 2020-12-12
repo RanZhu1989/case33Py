@@ -420,7 +420,7 @@ class GridData:
         closed = 1
         opened \ failed = 0 
         """
-        for i in range(36):
+        for i in range(len(res_alpha)):
             res_alpha[i]=int(round(res_alpha[i]))
             pass
         self.solution_breaker_state[list(map(lambda x, y: int(

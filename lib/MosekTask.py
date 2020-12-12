@@ -174,9 +174,9 @@ class MosekOPF:
 
         # output of MTs
         st_pmt = self.model.constraint(self.p_mt, Domain.inRange(
-            [0, 0, 0], [1e6, 1e6, 1e6]))
+            [0, 0, 0], [2e6, 2e6, 2e6]))
         st_qmt = self.model.constraint(self.q_mt, Domain.inRange(
-            [0, 0, 0], [0.5e6, 0.5e6, 0.5e6]))
+            [0, 0, 0], [1e6, 1e6, 1e6]))
 
         # substaion
         # v_sub = 1.0 pu
