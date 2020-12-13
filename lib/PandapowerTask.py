@@ -37,7 +37,7 @@ class PandapowerTask():
         self.reward = 0.0
         self.sum_blackout = 0.0
         self.start_time = self.make_time()
-        self.env_state_cash = np.array(40)
+        self.env_state_cache = np.array(40)
         pass
 
     def init_output(self):
@@ -323,7 +323,7 @@ class PandapowerTask():
                 pass
             pass
         with open(path_log_loss,"a+") as file:
-            file.write(str(self.loss_total)+",")
+            file.write(str(self.loss_total*1000)+",")
             file.write(str(round(self.loss_total*100 / ( 1e-6*np.real(np.sum(data.current_load)) ),2))+"\n")
             pass
         with open(path_log_shed,"a+") as file:
@@ -367,7 +367,7 @@ class PandapowerTask():
                       normal operation => ( 0, 0 )
             !!S_t comes from the solution of the previous step, while S_t+1 is taken from the current solution:
                 # 1. to form S_t:
-                    GridData.cash => current_P_load, current_P_PV, current_P_WT, net.line["in_service"]
+                    GridData.cache => current_P_load, current_P_PV, current_P_WT, net.line["in_service"]
                     GridData.current_event => list_fault_lines( dim=2 )
                 # 2. to form S_t+1:
                     GridData.current_xxx => current_P_load, current_P_PV, current_P_WT
@@ -386,21 +386,21 @@ class PandapowerTask():
         with open(self.outpath, "a+") as file:
             # save S_t dim=39
             for i in range(32):
-                file.write(str(int(data.pin_cash[i] * 1000)) + ",")
+                file.write(str(int(data.pin_cache[i] * 1000)) + ",")
                 pass
             for i in range(5):
-                file.write(str(data.line_opened_cash[i]) + ",")
+                file.write(str(data.line_opened_cache[i]) + ",")
                 pass
             for i in range(2):
-                file.write(str(data.line_fault_cash[i]) + ",")
+                file.write(str(data.line_fault_cache[i]) + ",")
                 pass
             file.write("%i" % (data.current_time-1)+",")
             # save A_t dim=11
             for i in range(3):
-                file.write(str(int(data.pmt_cash[i]/1000)) + ",")
+                file.write(str(int(data.pmt_cache[i]/1000)) + ",")
                 pass
             for i in range(3):
-                file.write(str(int(data.qmt_cash[i]/1000)) + ",")
+                file.write(str(int(data.qmt_cache[i]/1000)) + ",")
                 pass
             for i in range(5):
                 file.write(
@@ -428,7 +428,7 @@ class PandapowerTask():
             pass
         pass
 
-    def env_step(self, t, data: GridData, action: np.ndarray,debug=False):
+    def env_step(self, t, data: GridData, action: np.ndarray,debug=False,out=False,log=False):
         """
         S1. read current grid data using class GridData;
         S2. data.soultion_xxx covered by input action;
@@ -438,7 +438,16 @@ class PandapowerTask():
         S6. combine the input action with the next uncertain information including load\PV\WT\event 
 
         return S_t, R_{t+1}, S_{t+1}
-        * used for online traning mode
+        * usage:
+        - 1. for online traning mode
+        - 2. convert the actions from external solver into MDPC experience file 
+        
+        # although MOSEK solver is integrated into case33py, it is slow to generate the exp ...
+        # we recommend using solver by our case33Julia project, which is more powerful:
+            - with DP & MPC based optimizer 
+            - more customizable options
+            - fast and cache acceleration
+            ...
         """
         # set flag_gameover
         flag=False
@@ -462,7 +471,7 @@ class PandapowerTask():
             flag=True
         # save reward
         save_reward = self.reward
-        save_s = self.env_state_cash.copy()
+        save_s = self.env_state_cache.copy()
         data.make_step(step=t+1)
         self.set_load(data)
         self.set_pv(data)
@@ -474,7 +483,29 @@ class PandapowerTask():
         # pin opened_line fault_line time
         save_s_next = np.around(np.concatenate(
             (pin_next, action[6:11], data.list_fault_line_number, np.array([t+1, ])))).astype(int)
-        self.env_state_cash=save_s_next
+        self.env_state_cache=save_s_next
+        
+        
+        if out==True:
+            with open(self.outpath, "a+") as file:
+                # save S_t dim=40
+                for i in range(40):
+                    file.write(str(save_s[i]) + ",")
+                # save A_t dim=11
+                for i in range(11):
+                    file.write(str(action[i]) + ",")
+                # save R_t
+                file.write(str(self.reward) + ",")
+                # save S_{t+1} dim=40
+                for i in range(40):
+                    if i <39:
+                        file.write(str(save_s_next[i]) + ",")
+                    else:
+                        file.write(str(save_s_next[i]) + "\n")
+                pass
+            if log==True:
+                self.log_data(data)
+            pass
         self.reset()
         return save_s, save_reward, save_s_next, flag
 
@@ -493,7 +524,7 @@ class PandapowerTask():
 
     pass
 
-    def make_cash(self, data: GridData):
+    def make_cache(self, data: GridData):
         """
         save the preserving variable such as Breaker_State(S_{t-1}), P_in(S_{t-1}), SOC(S_{t-1}) ...
         """
@@ -502,37 +533,37 @@ class PandapowerTask():
         if len(list(np.nonzero(~data.solution_breaker_state.astype(bool))[0])) != 5:
             print("breaker state error! Exit!")
             sys.exit()
-        data.line_opened_cash = np.nonzero(
+        data.line_opened_cache = np.nonzero(
             ~data.solution_breaker_state.astype(bool))[0]
-        data.line_fault_cash = data.list_fault_line_number
+        data.line_fault_cache = data.list_fault_line_number
         # save the current P_in
-        data.pin_cash = np.array(
+        data.pin_cache = np.array(
             self.net.res_bus.sort_index().drop(0, 0)["p_mw"])
-        data.pin_cash[2]+= data.solution_mt_p[0]*1e-6
-        data.pin_cash[6]+= data.solution_mt_p[1]*1e-6
-        data.pin_cash[20]+= data.solution_mt_p[2]*1e-6
+        data.pin_cache[2]+= data.solution_mt_p[0]*1e-6
+        data.pin_cache[6]+= data.solution_mt_p[1]*1e-6
+        data.pin_cache[20]+= data.solution_mt_p[2]*1e-6
 
         # save mt output
-        data.pmt_cash = data.solution_mt_p
-        data.qmt_cash = data.solution_mt_q
+        data.pmt_cache = data.solution_mt_p
+        data.qmt_cache = data.solution_mt_q
 
         pass
 
     pass
 
-    def init_cash(self, data: GridData,env_mode=False,start=0):
+    def init_cache(self, data: GridData,env_mode=False,start=0):
         """
-        initialization the cash for the first time
+        initialization the cache for the first time
         we assume that the network works in normal condition
         """
         if env_mode==False:
-            data.line_opened_cash = np.array([32, 33, 34, 35, 36])
-            data.line_fault_cash = np.array([-99, -99])
-            data.pin_cash = np.array(
+            data.line_opened_cache = np.array([32, 33, 34, 35, 36])
+            data.line_fault_cache = np.array([-99, -99])
+            data.pin_cache = np.array(
                 self.net.load.sort_index()["p_mw"])
-            data.pin_cash[2]+= data.solution_mt_p[0]*1e-6
-            data.pin_cash[6]+= data.solution_mt_p[1]*1e-6
-            data.pin_cash[20]+= data.solution_mt_p[2]*1e-6
+            data.pin_cache[2]+= data.solution_mt_p[0]*1e-6
+            data.pin_cache[6]+= data.solution_mt_p[1]*1e-6
+            data.pin_cache[20]+= data.solution_mt_p[2]*1e-6
             
         else:
             data.make_step(step=start)
@@ -540,7 +571,7 @@ class PandapowerTask():
             self.set_pv(data)
             self.set_wt(data)
             pin = 1000*np.array(list(self.net.load.sort_index()["p_mw"]))
-            self.env_state_cash=np.around(np.concatenate(
+            self.env_state_cache=np.around(np.concatenate(
             (pin, np.array([32, 33, 34, 35, 36]), np.array([-99, -99]), np.array([0, ])))).astype(int)
             pass
 

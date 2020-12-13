@@ -5,7 +5,7 @@ import numpy as np
 
 data=GridData()
 grid=PandapowerTask()
-grid.init_cash(data,env_mode=True,start=0)
+grid.init_cache(data,env_mode=True,start=0)
 print(grid.net.line.sort_index())
 print(grid.net.bus.sort_index())
 

@@ -35,13 +35,13 @@ class GridData:
             labels=range(37, 74), axis=0).reset_index()
         self.static_gridPara_half_backward = self.static_gridPara.copy().drop(
             labels=range(0, 37), axis=0).reset_index()
-        # init cash
-        self.line_opened_cash = np.zeros(5)
-        self.line_fault_cash = np.zeros(2)
+        # init cache
+        self.line_opened_cache = np.zeros(5)
+        self.line_fault_cache = np.zeros(2)
         # WARRING : MT output injection is not included in pin
-        self.pin_cash = np.zeros(32)
-        self.pmt_cash = np.zeros(3)
-        self.qmt_cash = np.zeros(3)
+        self.pin_cache = np.zeros(32)
+        self.pmt_cache = np.zeros(3)
+        self.qmt_cache = np.zeros(3)
         # # Initializing optimizer results buffer
         # self.solution_breaker_state = np.zeros(37)
         # self.solution_mt_p = np.zeros(3)
