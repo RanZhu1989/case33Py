@@ -49,7 +49,7 @@ class GridData:
         # self.solution_loadshed = np.ones(32)
         pass
 
-    def make_step(self, step=0, noise=False):
+    def make_step(self, step=0, noise=False,DNR=False):
         '''
         # noise = True => adding Gaussian noise to simulate sensor sampling
 
@@ -154,13 +154,14 @@ class GridData:
             np.int32)
         # save the current fault line using pad method
         # to distinguish between noramal state and fault state, we use -99 as a place holder
-        if len(self.list_fault_line_number) == 0:
-            self.list_fault_line_number = np.pad(
-                self.list_fault_line_number, (0, 2), mode="constant", constant_values=(-99))
-        else:
-            if len(self.list_fault_line_number) == 1:
+        if DNR==False:
+            if len(self.list_fault_line_number) == 0:
                 self.list_fault_line_number = np.pad(
-                    self.list_fault_line_number, (0, 1), mode="constant", constant_values=(-99))
+                    self.list_fault_line_number, (0, 2), mode="constant", constant_values=(-99))
+            else:
+                if len(self.list_fault_line_number) == 1:
+                    self.list_fault_line_number = np.pad(
+                        self.list_fault_line_number, (0, 1), mode="constant", constant_values=(-99))
 
         # get r_line alive
         self.list_r = self.current_gridPara_half_forward["r"]

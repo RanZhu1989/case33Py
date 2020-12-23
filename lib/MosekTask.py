@@ -180,11 +180,13 @@ class MosekOPF:
 
         # substaion
         # v_sub = 1.0 pu
-        # p_in \ q_in of substation < 0  
+        # p_in \ q_in of substation < 0
         st_sub1 = self.model.constraint(
             self.v_sqr.index(0), Domain.equalsTo(12.66e3 ** 2))
-        st_sub2 = self.model.constraint(self.p_in.index(0),Domain.lessThan(0.0))
-        st_sub3 = self.model.constraint(self.p_in.index(0),Domain.lessThan(0.0))
+        st_sub2 = self.model.constraint(
+            self.p_in.index(0), Domain.lessThan(0.0))
+        st_sub3 = self.model.constraint(
+            self.q_in.index(0), Domain.lessThan(0.0))
 
     def make_objective(self, current_data: GridData):
         """
@@ -232,8 +234,8 @@ class MosekOPF:
         if debug == True:
             print(str(self.model.getProblemStatus()))
             print(str(self.model.getPrimalSolutionStatus()))
-            print(list(self.alpha.level()))
-            print(self.load_shed.level())
+            print("Breaker state =",list(self.alpha.level()))
+            # print(self.load_shed.level())
             print([sqrt(i)/12.66e3 for i in list(self.v_sqr.level())])
             print(self.p_mt.level())
             print(self.q_mt.level())
@@ -267,6 +269,8 @@ class MosekOPF:
 !!! DONT USE !!!
 MosekDNR Class is still in work progress
 '''
+
+
 class MosekDNR(MosekOPF):
     '''
     inherited from class MosekOPF
@@ -284,12 +288,13 @@ class MosekDNR(MosekOPF):
         soc_range
         """
         print("Current num_lines_alive = ", current_data.num_lines)
-
+        self.v_l=v_range[0]
+        self.v_u=v_range[1]
         # build a model
         self.model = Model("case33")
         # sqr of node voltage
         self.v_sqr = self.model.variable(
-            "v_sqr", 33, Domain.inRange(v_range[0], v_range[1]))
+            "v_sqr", 33)
         # sqr of line current
         self.i_sqr = self.model.variable(
             "i_sqr", 37, Domain.inRange(0.0, i_max ** 2))
@@ -311,7 +316,7 @@ class MosekDNR(MosekOPF):
         self.epsilon = self.model.variable("epsilon", 33, Domain.binary())
         # target variable for the DIRECTED multi-commodity flow constraint
         self.beta = self.model.variable(
-            "beta", 74, Domain.binary())
+            "beta", 37, Domain.binary())
         # auxiliary variable for the DIRECTED multi-commodity flow constraint
         self.lam = self.model.variable("lam", 74, Domain.binary())
         '''
@@ -323,7 +328,7 @@ class MosekDNR(MosekOPF):
         # auxiliary variable for "ij" term for McCormick envelopes
         self.w1 = self.model.variable("w1", 33, Domain.greaterThan(0))
         # auxiliary variable for "jk" term for McCormick envelopes
-        self.w2 = self.model.variable("w2", 30, Domain.greaterThan(0))
+        self.w2 = self.model.variable("w2", 33, Domain.greaterThan(0))
         # ES charge flag and discharge flag
         # self.charge_flag=self.M.variable("charge_flag",2,Domain.binary())
         # self.discharge_flag=self.M.variable("discharge_flag",2,Domain.binary())
@@ -352,7 +357,13 @@ class MosekDNR(MosekOPF):
             mode="jk_forward", current_state=False)
 
         # set alpha of failed line =>0
-        self.model.constraint(self.alpha.pick(current_data.list_fault_line_number),Domain.equalsTo(0))
+        # print(current_data.list_fault_line_number.tolist())
+        self.model.constraint(self.alpha.pick(
+            current_data.list_fault_line_number.tolist()), Domain.equalsTo(0))
+        self.model.constraint(self.p_forward.pick(current_data.list_fault_line_number.tolist()),Domain.equalsTo(0))
+        self.model.constraint(self.q_forward.pick(current_data.list_fault_line_number.tolist()),Domain.equalsTo(0))
+        self.model.constraint(self.i_sqr.pick(current_data.list_fault_line_number.tolist()),Domain.equalsTo(0))
+        
         # set the line mask matrix "root-free" in ij\jk mode
         # self.mask_matrix_ij_rootfree = np.delete(self.mask_matrix_ij, 0, 0)
         # self.mask_matrix_jk_rootfree = np.delete(self.mask_matrix_jk, 0, 0)
@@ -376,10 +387,10 @@ class MosekDNR(MosekOPF):
         # for MT-installed nodes
 
         st_mt_pin = self.model.constraint(Expr.sub(
-            Expr.add(Expr.sub(self.p_mt, Expr.mulElm(self.load_shed.pick([3, 7, 21]), current_data.list_Pload_MT.tolist(
+            Expr.add(Expr.sub(self.p_mt, Expr.mulElm(self.load_shed.pick([2, 6, 20]), current_data.list_Pload_MT.tolist(
             ))), current_data.list_Ppv_MT.tolist()), self.p_in.pick([3, 7, 21])), Domain.equalsTo(0.0))
         st_mt_qin = self.model.constraint(Expr.sub(
-            Expr.add(Expr.sub(self.q_mt, Expr.mulElm(self.load_shed.pick([3, 7, 21]), current_data.list_Qload_MT.tolist(
+            Expr.add(Expr.sub(self.q_mt, Expr.mulElm(self.load_shed.pick([2, 6, 20]), current_data.list_Qload_MT.tolist(
             ))), current_data.list_Qpv_MT.tolist()), self.q_in.pick([3, 7, 21])), Domain.equalsTo(0.0))
 
         # for MT-free nodes
@@ -396,6 +407,12 @@ class MosekDNR(MosekOPF):
             self.q_in.pick(
                 current_data.list_in.tolist())), current_data.list_Qpv.tolist()), current_data.list_Qwt.tolist()),
             Domain.equalsTo(0.0))
+        
+        # voltage
+        self.model.constraint(Expr.sub(self.v_sqr,Expr.mul(self.epsilon,self.v_u)),Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.v_sqr,Expr.mul(self.epsilon,self.v_l)),Domain.greaterThan(0))
+        
+        # self.model.constraint(Expr.sub(self.load_shed,self.epsilon.pick([i for i in range(1,33)])),Domain.greaterThan(0))
 
         # Dist-Flow power constraints
         # Dist-Flow power constraints
@@ -424,8 +441,7 @@ class MosekDNR(MosekOPF):
         for j in range(0, 33):
             for jk in np.nonzero(current_data.seek_neighbor(j + 1, mode="jk_forward", current_state=False))[0].tolist():
                 self.model.constraint(Expr.mulElm([0.5, 1, 1, 1], Var.vstack(
-                    Var.vstack(Var.vstack(self.v_sqr.index(j),
-                                          self.i_sqr.index(jk)), self.p_forward.index(jk)),
+                    Var.vstack(Var.vstack(self.v_sqr.index(j),self.i_sqr.index(jk)), self.p_forward.index(jk)),
                     self.q_forward.index(jk))), Domain.inRotatedQCone(4))
                 pass
             pass
@@ -440,26 +456,29 @@ class MosekDNR(MosekOPF):
         st_DMCF_aux1: relation between the auxiliary variable f_flow and lam  
         st_DMCF_aux2: sum(lam) = |N| - 1 
         st_DMCF_aux3: relation between the target variable beta and the auxiliary variable lam 
+        st_DMCF_aux4: alpha_ij <= beta_ij
         '''
         # st_DMCF_source
         for k in range(32):
             self.model.constraint(Expr.sub(self.f_flow.index(
-                0, k), self.f_flow.index(38, k)), Domain.equalsTo(-1))
+                38, k), self.f_flow.index(0, k)), Domain.equalsTo(-1))
             pass
-        # st_DMCF_receive
+        
+        #st_DMCF_receive
         for k in range(32):
-            self.model.constraint(Expr.sub(Expr.mul(current_data.seek_neighbor(k+2, mode="all_ij_forward", current_state=False).tolist(), self.f_flow.slice([0, k], [73, k])), Expr.mul(
-                current_data.seek_neighbor(k+2, mode="all_jk_forward", current_state=False).tolist(), self.f_flow.slice([0, k], [73, k]))), Domain.equalsTo(1))
+            self.model.constraint(Expr.sub(Expr.mul(current_data.seek_neighbor(k+2, mode="all_ij_forward", current_state=False).tolist(), self.f_flow.slice([0, k], [74, k+1])), Expr.mul(
+                current_data.seek_neighbor(k+2, mode="all_jk_forward", current_state=False).tolist(), self.f_flow.slice([0, k], [74, k+1]))), Domain.equalsTo(1))
             pass
         # st_DMCF_reject
         for k in range(32):
             for j in range(32):
                 if j != k:
-                    self.model.constraint(Expr.sub(Expr.mul(current_data.seek_neighbor(j+2, mode="all_ij_forward", current_state=False).tolist(), self.f_flow.slice(
-                        [0, k], [73, k])), Expr.mul(current_data.seek_neighbor(j+2, mode="all_jk_forward", current_state=False).tolist(), self.f_flow.slice([0, k], [73, k]))), Domain.equalsTo(0))
+                    self.model.constraint(Expr.sub(Expr.mul(current_data.seek_neighbor(j+2, mode="all_ij_forward", current_state=False).tolist(), self.f_flow.slice([0, k], [74, k+1])), Expr.mul(
+                        current_data.seek_neighbor(j+2, mode="all_jk_forward", current_state=False).tolist(), self.f_flow.slice([0, k], [74, k+1]))), Domain.equalsTo(0))
                     pass
                 pass
             pass
+        
         # st_DMCF_aux1
         for k in range(32):
             for idx in range(74):
@@ -467,14 +486,24 @@ class MosekDNR(MosekOPF):
                     idx, k), self.lam.index(idx)), Domain.lessThan(0))
                 pass
             pass
-        # st_DMCF_aux2
+        
+        # # st_DMCF_aux2
         self.model.constraint(Expr.sum(self.lam), Domain.equalsTo(32))
-        # st_DMCF_aux3
+        
+        # # st_DMCF_aux3
         for idx in range(37):
             self.model.constraint(Expr.sub(Expr.add(self.lam.index(idx), self.lam.index(
                 idx+37)), self.beta.index(idx)), Domain.equalsTo(0))
             pass
+        
+        # # st_DMCF_aux4
+        self.model.constraint(Expr.sub(self.alpha,self.beta),Domain.lessThan(0))
 
+        # #  set a init node fault
+        # self.model.constraint(self.epsilon.pick([5,17]),Domain.equalsTo(0)) 
+        
+        
+        
         '''
         Driver constraints of the energized state
         #NOTE:the (epsilon * alpha) term will be convexified by McCormick envelopes
@@ -492,12 +521,12 @@ class MosekDNR(MosekOPF):
         - Fortunately, in case33bw, we need to handle 30 nodes 
         '''
         self.model.constraint(self.epsilon.pick(
-            [0, 3, 7, 21]), Domain.equalsTo(0))
+            [0, 3, 7, 21]), Domain.equalsTo(1))
         # node 2
         self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(0), self.w1.index(
             1)), self.w2.index(0)), Expr.mul(self.epsilon.index(1), 3)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(Expr.add(self.w1.index(
-            0), self.w1.index(1)), self.w2.index(0)), Domain.greaterThan(3))
+        self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(
+            0), self.w1.index(1)), self.w2.index(0)),self.epsilon.index(1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             0), self.alpha.index(1)), Domain.lessThan(0))
@@ -522,8 +551,8 @@ class MosekDNR(MosekOPF):
         # node 3
         self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(2), self.w1.index(
             3)), self.w2.index(1)), Expr.mul(self.epsilon.index(2), 3)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(Expr.add(self.w1.index(
-            2), self.w1.index(3)), self.w2.index(1)), Domain.greaterThan(3))
+        self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(
+            2), self.w1.index(3)), self.w2.index(1)),self.epsilon.index(2)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             2), self.alpha.index(2)), Domain.lessThan(0))
@@ -548,8 +577,8 @@ class MosekDNR(MosekOPF):
         # node 5
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(4), self.w2.index(
             2)), Expr.mul(self.epsilon.index(4), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            4), self.w2.index(2)), Domain.greaterThan(2))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            4), self.w2.index(2)),self.epsilon.index(4)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             4), self.alpha.index(4)), Domain.lessThan(0))
@@ -568,8 +597,8 @@ class MosekDNR(MosekOPF):
         # node 6
         self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(5), self.w1.index(
             6)), self.w2.index(3)), Expr.mul(self.epsilon.index(5), 3)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(Expr.add(self.w1.index(
-            5), self.w1.index(6)), self.w2.index(3)), Domain.greaterThan(3))
+        self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(
+            5), self.w1.index(6)), self.w2.index(3)),self.epsilon.index(5)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             5), self.alpha.index(5)), Domain.lessThan(0))
@@ -594,8 +623,8 @@ class MosekDNR(MosekOPF):
         # node 7
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(7), self.w2.index(
             4)), Expr.mul(self.epsilon.index(6), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            7), self.w2.index(4)), Domain.greaterThan(2))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            7), self.w2.index(4)),self.epsilon.index(6)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             7), self.alpha.index(6)), Domain.lessThan(0))
@@ -614,15 +643,15 @@ class MosekDNR(MosekOPF):
         # node 9
         self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(8), self.w1.index(
             9)), self.w2.index(5)), Expr.mul(self.epsilon.index(8), 3)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(Expr.add(self.w1.index(
-            8), self.w1.index(9)), self.w2.index(5)), Domain.greaterThan(3))
+        self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(
+            8), self.w1.index(9)), self.w2.index(5)),self.epsilon.index(8)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             8), self.alpha.index(8)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w1.index(
-            8), self.epsilon.index(8)), Domain.lessThan(0))
+            8), self.epsilon.index(9)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w1.index(8), Expr.sub(Expr.add(
-            self.alpha.index(8), self.epsilon.index(8)), 1)), Domain.greaterThan(0))
+            self.alpha.index(8), self.epsilon.index(9)), 1)), Domain.greaterThan(0))
         self.model.constraint(Expr.sub(self.w1.index(
             9), self.alpha.index(33)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w1.index(
@@ -640,8 +669,8 @@ class MosekDNR(MosekOPF):
         # node 10
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(10), self.w2.index(
             6)), Expr.mul(self.epsilon.index(9), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            10), self.w2.index(6)), Domain.greaterThan(2))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            10), self.w2.index(6)),self.epsilon.index(9)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             10), self.alpha.index(9)), Domain.lessThan(0))
@@ -660,8 +689,8 @@ class MosekDNR(MosekOPF):
         # node 11
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(11), self.w2.index(
             7)), Expr.mul(self.epsilon.index(10), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            11), self.w2.index(7)), Domain.greaterThan(2))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            11), self.w2.index(7)),self.epsilon.index(10)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             11), self.alpha.index(10)), Domain.lessThan(0))
@@ -680,8 +709,8 @@ class MosekDNR(MosekOPF):
         # node 12
         self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(12), self.w1.index(
             13)), self.w2.index(8)), Expr.mul(self.epsilon.index(11), 3)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(Expr.add(self.w1.index(
-            12), self.w1.index(13)), self.w2.index(8)), Domain.greaterThan(3))
+        self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(
+            12), self.w1.index(13)), self.w2.index(8)),self.epsilon.index(11)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             12), self.alpha.index(11)), Domain.lessThan(0))
@@ -706,8 +735,8 @@ class MosekDNR(MosekOPF):
         # node 13
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(14), self.w2.index(
             9)), Expr.mul(self.epsilon.index(12), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            14), self.w2.index(9)), Domain.greaterThan(2))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            14), self.w2.index(9)),self.epsilon.index(12)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             14), self.alpha.index(12)), Domain.lessThan(0))
@@ -726,8 +755,8 @@ class MosekDNR(MosekOPF):
         # node 14
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(15), self.w2.index(
             10)), Expr.mul(self.epsilon.index(13), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            15), self.w2.index(10)), Domain.greaterThan(2))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            15), self.w2.index(10)),self.epsilon.index(13)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             15), self.alpha.index(13)), Domain.lessThan(0))
@@ -743,11 +772,11 @@ class MosekDNR(MosekOPF):
         self.model.constraint(Expr.sub(self.w2.index(10), Expr.sub(Expr.add(
             self.alpha.index(12), self.epsilon.index(12)), 1)), Domain.greaterThan(0))
 
-        # node 15
-        self.model.constraint(Expr.sub(Expr.add(self.w1.index(16), self.w2.index(
-            11)), Expr.mul(self.epsilon.index(14), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            16), self.w2.index(11)), Domain.greaterThan(2))
+        # node 15 *
+        self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(16), self.w2.index(
+            11)), self.w2.index(12)), Expr.mul(self.epsilon.index(14), 3)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(
+            16), self.w2.index(11)), self.w2.index(12)),self.epsilon.index(14)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             16), self.alpha.index(14)), Domain.lessThan(0))
@@ -762,12 +791,18 @@ class MosekDNR(MosekOPF):
             11), self.epsilon.index(13)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(11), Expr.sub(Expr.add(
             self.alpha.index(13), self.epsilon.index(13)), 1)), Domain.greaterThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(
+            12), self.alpha.index(33)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(
+            12), self.epsilon.index(8)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(12), Expr.sub(Expr.add(
+            self.alpha.index(33), self.epsilon.index(8)), 1)), Domain.greaterThan(0))
 
         # node 16
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(17), self.w2.index(
-            12)), Expr.mul(self.epsilon.index(15), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            17), self.w2.index(12)), Domain.greaterThan(2))
+            13)), Expr.mul(self.epsilon.index(15), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            17), self.w2.index(13)),self.epsilon.index(15)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             17), self.alpha.index(15)), Domain.lessThan(0))
@@ -777,17 +812,17 @@ class MosekDNR(MosekOPF):
             self.alpha.index(15), self.epsilon.index(16)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            12), self.alpha.index(14)), Domain.lessThan(0))
+            13), self.alpha.index(14)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            12), self.epsilon.index(14)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(12), Expr.sub(Expr.add(
+            13), self.epsilon.index(14)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(13), Expr.sub(Expr.add(
             self.alpha.index(14), self.epsilon.index(14)), 1)), Domain.greaterThan(0))
 
         # node 17
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(18), self.w2.index(
-            13)), Expr.mul(self.epsilon.index(16), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            18), self.w2.index(13)), Domain.greaterThan(2))
+            14)), Expr.mul(self.epsilon.index(16), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            18), self.w2.index(14)),self.epsilon.index(16)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             18), self.alpha.index(16)), Domain.lessThan(0))
@@ -797,17 +832,17 @@ class MosekDNR(MosekOPF):
             self.alpha.index(16), self.epsilon.index(17)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            13), self.alpha.index(15)), Domain.lessThan(0))
+            14), self.alpha.index(15)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            13), self.epsilon.index(15)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(13), Expr.sub(Expr.add(
+            14), self.epsilon.index(15)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(14), Expr.sub(Expr.add(
             self.alpha.index(15), self.epsilon.index(15)), 1)), Domain.greaterThan(0))
 
         # node 18
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(19), self.w2.index(
-            14)), Expr.mul(self.epsilon.index(17), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            19), self.w2.index(14)), Domain.greaterThan(2))
+            15)), Expr.mul(self.epsilon.index(17), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            19), self.w2.index(15)),self.epsilon.index(17)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             19), self.alpha.index(35)), Domain.lessThan(0))
@@ -817,17 +852,17 @@ class MosekDNR(MosekOPF):
             self.alpha.index(35), self.epsilon.index(32)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            14), self.alpha.index(16)), Domain.lessThan(0))
+            15), self.alpha.index(16)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            14), self.epsilon.index(16)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(14), Expr.sub(Expr.add(
+            15), self.epsilon.index(16)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(15), Expr.sub(Expr.add(
             self.alpha.index(16), self.epsilon.index(16)), 1)), Domain.greaterThan(0))
 
         # node 19
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(20), self.w2.index(
-            15)), Expr.mul(self.epsilon.index(18), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            20), self.w2.index(15)), Domain.greaterThan(2))
+            16)), Expr.mul(self.epsilon.index(18), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            20), self.w2.index(16)),self.epsilon.index(18)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             20), self.alpha.index(18)), Domain.lessThan(0))
@@ -837,37 +872,37 @@ class MosekDNR(MosekOPF):
             self.alpha.index(18), self.epsilon.index(19)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            15), self.alpha.index(17)), Domain.lessThan(0))
+            16), self.alpha.index(17)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            15), self.epsilon.index(17)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(15), Expr.sub(Expr.add(
-            self.alpha.index(17), self.epsilon.index(17)), 1)), Domain.greaterThan(0))
+            16), self.epsilon.index(1)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(16), Expr.sub(Expr.add(
+            self.alpha.index(17), self.epsilon.index(1)), 1)), Domain.greaterThan(0))
 
         # node 20
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(21), self.w2.index(
-            16)), Expr.mul(self.epsilon.index(19), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            21), self.w2.index(16)), Domain.greaterThan(2))
+            17)), Expr.mul(self.epsilon.index(19), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            21), self.w2.index(17)),self.epsilon.index(19)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
-            21), self.alpha.index(18)), Domain.lessThan(0))
+            21), self.alpha.index(19)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w1.index(
-            21), self.epsilon.index(19)), Domain.lessThan(0))
+            21), self.epsilon.index(20)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w1.index(21), Expr.sub(Expr.add(
-            self.alpha.index(18), self.epsilon.index(19)), 1)), Domain.greaterThan(0))
+            self.alpha.index(19), self.epsilon.index(20)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            16), self.alpha.index(18)), Domain.lessThan(0))
+            17), self.alpha.index(18)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            16), self.epsilon.index(18)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(16), Expr.sub(Expr.add(
+            17), self.epsilon.index(18)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(17), Expr.sub(Expr.add(
             self.alpha.index(18), self.epsilon.index(18)), 1)), Domain.greaterThan(0))
 
-        # node 21
-        self.model.constraint(Expr.sub(Expr.add(self.w1.index(22), self.w2.index(
-            17)), Expr.mul(self.epsilon.index(20), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            22), self.w2.index(17)), Domain.greaterThan(2))
+        # node 21 *
+        self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(22), self.w2.index(
+            18)), self.w2.index(19)), Expr.mul(self.epsilon.index(20), 3)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(
+            22), self.w2.index(18)), self.w2.index(19)),self.epsilon.index(20)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             22), self.alpha.index(20)), Domain.lessThan(0))
@@ -877,37 +912,43 @@ class MosekDNR(MosekOPF):
             self.alpha.index(20), self.epsilon.index(21)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            17), self.alpha.index(19)), Domain.lessThan(0))
+            18), self.alpha.index(19)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            17), self.epsilon.index(19)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(17), Expr.sub(Expr.add(
+            18), self.epsilon.index(19)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(18), Expr.sub(Expr.add(
             self.alpha.index(19), self.epsilon.index(19)), 1)), Domain.greaterThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(
+            19), self.alpha.index(32)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(
+            19), self.epsilon.index(7)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(19), Expr.sub(Expr.add(
+            self.alpha.index(32), self.epsilon.index(7)), 1)), Domain.greaterThan(0))
 
         # node 23
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(23), self.w2.index(
-            18)), Expr.mul(self.epsilon.index(20), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            23), self.w2.index(18)), Domain.greaterThan(2))
+            20)), Expr.mul(self.epsilon.index(22), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            23), self.w2.index(20)),self.epsilon.index(22)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             23), self.alpha.index(22)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w1.index(
             23), self.epsilon.index(23)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w1.index(23), Expr.sub(Expr.add(
-            self.alpha.index(20), self.epsilon.index(21)), 1)), Domain.greaterThan(0))
+            self.alpha.index(22), self.epsilon.index(23)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            18), self.alpha.index(21)), Domain.lessThan(0))
+            20), self.alpha.index(21)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            18), self.epsilon.index(2)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(18), Expr.sub(Expr.add(
+            20), self.epsilon.index(2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(20), Expr.sub(Expr.add(
             self.alpha.index(21), self.epsilon.index(2)), 1)), Domain.greaterThan(0))
 
         # node 24
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(24), self.w2.index(
-            19)), Expr.mul(self.epsilon.index(22), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            24), self.w2.index(19)), Domain.greaterThan(2))
+            21)), Expr.mul(self.epsilon.index(23), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            24), self.w2.index(21)),self.epsilon.index(23)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             24), self.alpha.index(23)), Domain.lessThan(0))
@@ -917,17 +958,17 @@ class MosekDNR(MosekOPF):
             self.alpha.index(23), self.epsilon.index(24)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            19), self.alpha.index(22)), Domain.lessThan(0))
+            21), self.alpha.index(22)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            19), self.epsilon.index(22)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(19), Expr.sub(Expr.add(
-            self.alpha.index(22), self.epsilon.index(2)), 1)), Domain.greaterThan(0))
+            21), self.epsilon.index(22)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(21), Expr.sub(Expr.add(
+            self.alpha.index(22), self.epsilon.index(22)), 1)), Domain.greaterThan(0))
 
         # node 25
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(25), self.w2.index(
-            20)), Expr.mul(self.epsilon.index(23), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            25), self.w2.index(20)), Domain.greaterThan(2))
+            22)), Expr.mul(self.epsilon.index(24), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            25), self.w2.index(22)),self.epsilon.index(24)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             25), self.alpha.index(36)), Domain.lessThan(0))
@@ -937,17 +978,17 @@ class MosekDNR(MosekOPF):
             self.alpha.index(36), self.epsilon.index(28)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            20), self.alpha.index(23)), Domain.lessThan(0))
+            22), self.alpha.index(23)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            20), self.epsilon.index(23)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(20), Expr.sub(Expr.add(
+            22), self.epsilon.index(23)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(22), Expr.sub(Expr.add(
             self.alpha.index(23), self.epsilon.index(23)), 1)), Domain.greaterThan(0))
 
         # node 26
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(26), self.w2.index(
-            21)), Expr.mul(self.epsilon.index(24), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            26), self.w2.index(21)), Domain.greaterThan(2))
+            23)), Expr.mul(self.epsilon.index(25), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            26), self.w2.index(23)),self.epsilon.index(25)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             26), self.alpha.index(25)), Domain.lessThan(0))
@@ -957,17 +998,17 @@ class MosekDNR(MosekOPF):
             self.alpha.index(25), self.epsilon.index(26)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            21), self.alpha.index(24)), Domain.lessThan(0))
+            23), self.alpha.index(24)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            21), self.epsilon.index(5)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(21), Expr.sub(Expr.add(
+            23), self.epsilon.index(5)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(23), Expr.sub(Expr.add(
             self.alpha.index(24), self.epsilon.index(5)), 1)), Domain.greaterThan(0))
 
         # node 27
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(27), self.w2.index(
-            22)), Expr.mul(self.epsilon.index(25), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            27), self.w2.index(22)), Domain.greaterThan(2))
+            24)), Expr.mul(self.epsilon.index(26), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            27), self.w2.index(24)),self.epsilon.index(26)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             27), self.alpha.index(26)), Domain.lessThan(0))
@@ -977,17 +1018,17 @@ class MosekDNR(MosekOPF):
             self.alpha.index(26), self.epsilon.index(27)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            22), self.alpha.index(25)), Domain.lessThan(0))
+            24), self.alpha.index(25)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            22), self.epsilon.index(25)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(22), Expr.sub(Expr.add(
+            24), self.epsilon.index(25)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(24), Expr.sub(Expr.add(
             self.alpha.index(25), self.epsilon.index(25)), 1)), Domain.greaterThan(0))
 
         # node 28
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(28), self.w2.index(
-            23)), Expr.mul(self.epsilon.index(26), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            28), self.w2.index(23)), Domain.greaterThan(2))
+            25)), Expr.mul(self.epsilon.index(27), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            28), self.w2.index(25)),self.epsilon.index(27)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             28), self.alpha.index(27)), Domain.lessThan(0))
@@ -997,17 +1038,17 @@ class MosekDNR(MosekOPF):
             self.alpha.index(27), self.epsilon.index(28)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            23), self.alpha.index(26)), Domain.lessThan(0))
+            25), self.alpha.index(26)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            23), self.epsilon.index(26)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(23), Expr.sub(Expr.add(
+            25), self.epsilon.index(26)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(25), Expr.sub(Expr.add(
             self.alpha.index(26), self.epsilon.index(26)), 1)), Domain.greaterThan(0))
 
-        # node 29
-        self.model.constraint(Expr.sub(Expr.add(self.w1.index(29), self.w2.index(
-            24)), Expr.mul(self.epsilon.index(27), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            29), self.w2.index(24)), Domain.greaterThan(2))
+        # node 29 *
+        self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(29), self.w2.index(
+            26)), self.w2.index(27)), Expr.mul(self.epsilon.index(28), 3)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(Expr.add(self.w1.index(
+            29), self.w2.index(26)), self.w2.index(27)),self.epsilon.index(28)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             29), self.alpha.index(28)), Domain.lessThan(0))
@@ -1017,17 +1058,23 @@ class MosekDNR(MosekOPF):
             self.alpha.index(28), self.epsilon.index(29)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            24), self.alpha.index(27)), Domain.lessThan(0))
+            26), self.alpha.index(27)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            24), self.epsilon.index(27)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(24), Expr.sub(Expr.add(
+            26), self.epsilon.index(27)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(26), Expr.sub(Expr.add(
             self.alpha.index(27), self.epsilon.index(27)), 1)), Domain.greaterThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(
+            27), self.alpha.index(36)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(
+            27), self.epsilon.index(24)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(27), Expr.sub(Expr.add(
+            self.alpha.index(36), self.epsilon.index(24)), 1)), Domain.greaterThan(0))
 
         # node 30
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(30), self.w2.index(
-            25)), Expr.mul(self.epsilon.index(28), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            30), self.w2.index(25)), Domain.greaterThan(2))
+            28)), Expr.mul(self.epsilon.index(29), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            30), self.w2.index(28)),self.epsilon.index(29)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             30), self.alpha.index(29)), Domain.lessThan(0))
@@ -1037,17 +1084,17 @@ class MosekDNR(MosekOPF):
             self.alpha.index(29), self.epsilon.index(30)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            25), self.alpha.index(28)), Domain.lessThan(0))
+            28), self.alpha.index(28)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            25), self.epsilon.index(28)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(25), Expr.sub(Expr.add(
+            28), self.epsilon.index(28)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(28), Expr.sub(Expr.add(
             self.alpha.index(28), self.epsilon.index(28)), 1)), Domain.greaterThan(0))
 
         # node 31
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(31), self.w2.index(
-            26)), Expr.mul(self.epsilon.index(29), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            31), self.w2.index(26)), Domain.greaterThan(2))
+            29)), Expr.mul(self.epsilon.index(30), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            31), self.w2.index(29)),self.epsilon.index(30)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             31), self.alpha.index(30)), Domain.lessThan(0))
@@ -1057,17 +1104,17 @@ class MosekDNR(MosekOPF):
             self.alpha.index(30), self.epsilon.index(31)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            26), self.alpha.index(29)), Domain.lessThan(0))
+            29), self.alpha.index(29)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            26), self.epsilon.index(29)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(26), Expr.sub(Expr.add(
+            29), self.epsilon.index(29)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(29), Expr.sub(Expr.add(
             self.alpha.index(29), self.epsilon.index(29)), 1)), Domain.greaterThan(0))
 
         # node 32
         self.model.constraint(Expr.sub(Expr.add(self.w1.index(32), self.w2.index(
-            27)), Expr.mul(self.epsilon.index(30), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w1.index(
-            32), self.w2.index(27)), Domain.greaterThan(2))
+            30)), Expr.mul(self.epsilon.index(31), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w1.index(
+            32), self.w2.index(30)),self.epsilon.index(31)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w1.index(
             32), self.alpha.index(31)), Domain.lessThan(0))
@@ -1077,43 +1124,53 @@ class MosekDNR(MosekOPF):
             self.alpha.index(31), self.epsilon.index(32)), 1)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            27), self.alpha.index(30)), Domain.lessThan(0))
+            30), self.alpha.index(30)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            27), self.epsilon.index(30)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(27), Expr.sub(Expr.add(
+            30), self.epsilon.index(30)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(30), Expr.sub(Expr.add(
             self.alpha.index(30), self.epsilon.index(30)), 1)), Domain.greaterThan(0))
 
         # node 33
-        self.model.constraint(Expr.add(Expr.add(self.w2.index(28), self.w2.index(
-            29)), Expr.mul(self.epsilon.index(32), 2)), Domain.lessThan(0))
-        self.model.constraint(Expr.add(self.w2.index(
-            28), self.w2.index(29)), Domain.greaterThan(2))
+        self.model.constraint(Expr.add(Expr.add(self.w2.index(31), self.w2.index(
+            32)), Expr.mul(self.epsilon.index(32), 2)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(Expr.add(self.w2.index(
+            31), self.w2.index(32)),self.epsilon.index(32)), Domain.greaterThan(0))
 
         self.model.constraint(Expr.sub(self.w2.index(
-            28), self.alpha.index(31)), Domain.lessThan(0))
+            31), self.alpha.index(31)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            28), self.epsilon.index(30)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(28), Expr.sub(Expr.add(
-            self.alpha.index(31), self.epsilon.index(30)), 1)), Domain.greaterThan(0))
+            31), self.epsilon.index(31)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(31), Expr.sub(Expr.add(
+            self.alpha.index(31), self.epsilon.index(31)), 1)), Domain.greaterThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            29), self.alpha.index(35)), Domain.lessThan(0))
+            32), self.alpha.index(35)), Domain.lessThan(0))
         self.model.constraint(Expr.sub(self.w2.index(
-            29), self.epsilon.index(17)), Domain.lessThan(0))
-        self.model.constraint(Expr.sub(self.w2.index(29), Expr.sub(Expr.add(
+            32), self.epsilon.index(17)), Domain.lessThan(0))
+        self.model.constraint(Expr.sub(self.w2.index(32), Expr.sub(Expr.add(
             self.alpha.index(35), self.epsilon.index(17)), 1)), Domain.greaterThan(0))
 
         # output of MTs
         st_pmt = self.model.constraint(self.p_mt, Domain.inRange(
-            [750e3, 125e3, 375e3], [3e6, 5e5, 1.5e6]))
+            [0, 0, 0], [2e6, 2e6, 2e6]))
         st_qmt = self.model.constraint(self.q_mt, Domain.inRange(
-            [-1.5e6, -2.5e5, -1e6], [1.5e6, 2.5e5, 1e6]))
+            [0, 0, 0], [1e6, 1e6, 1e6]))
 
         # substaion
         # v_sub = 1.0 pu
         st_sub1 = self.model.constraint(
             self.v_sqr.index(0), Domain.equalsTo(12.66e3 ** 2))
-        st_sub2 = self.model.constraint(
-            self.p_in.index(0), Domain.lessThan(0.0))
+        # st_sub2 = self.model.constraint(
+        #     self.p_in.index(0), Domain.lessThan(0.0))
+        # st_sub3 = self.model.constraint(
+        #     self.q_in.index(0), Domain.lessThan(0.0))
+        self.model.constraint(
+            self.v_sqr.index(3), Domain.equalsTo(12.66e3 ** 2))
+        self.model.constraint(
+            self.v_sqr.index(7), Domain.equalsTo(12.66e3 ** 2))
+        self.model.constraint(
+            self.v_sqr.index(21), Domain.equalsTo(12.66e3 ** 2))
+        
+        
 
     def make_objective(self, current_data: GridData):
         """
@@ -1126,8 +1183,16 @@ class MosekDNR(MosekOPF):
 
         """
 
-        obj_function = Expr.sum(Expr.mulElm(Expr.sub(np.ones(32).tolist(), self.load_shed),
-                                            current_data.current_Pload.tolist()))
-        self.model.objective("obj", ObjectiveSense.Minimize, obj_function)
+        obj_function = Expr.sum(Expr.mul(Expr.mulElm(self.epsilon.pick([i for i in range(1,33)]),current_data.current_Pload.tolist()),1e-3))
+        self.model.objective("obj", ObjectiveSense.Maximize, obj_function)
         pass
+
+    # def make_fflist(self, k):
+    #     """
+    #     make a 2-Dim list like [ [0,K], [1,K] ... [73,K] ]
+    #     """
+    #     out = []
+    #     for i in range(74):
+    #         out.append([i, k])
+    #     return out
     pass

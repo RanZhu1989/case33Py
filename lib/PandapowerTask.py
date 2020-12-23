@@ -39,10 +39,25 @@ class PandapowerTask():
         self.start_time = self.make_time()
         self.env_state_cache = np.array(40)
         pass
+    
+    def init_action_space(self,path="lib/macro/action_space.csv"):
+        """
+        read action definition
+        
+        action number | line_opened#1 | line_opened#2 |...
+        
+        + return number of actions
+        
+        """
+        self.action_space=np.loadtxt(path,dtype=int,delimiter=",")
+        
+        
+        
+        pass
 
     def init_output(self):
         """
-        docstring
+        initialize experience file
         """
         self.outpath = "./out/res_MDPC/"+self.start_time + "prim_MDPC.csv"
         # init the header of MDPC.csv
@@ -159,14 +174,16 @@ class PandapowerTask():
             pass
         pass
 
-    def cal_reward(self, data: GridData):
+    def cal_reward(self, data: GridData,silent=True):
         """
         * the function for calculating the reward *
         Reward = (penalty coefficient) * bias of voltage + (pirce_loss) * total power loss 
         + (price_blackout) * load loss + (mt_cost) * total P_mt
         """
-        print("Load Shed = ", self.sum_blackout)
-        print("Voltage Deviation", self.voltage_bias)
+        if silent==False:
+            print("Load Shed = ", self.sum_blackout)
+            print("Voltage Deviation", self.voltage_bias)
+            
         reward = (self.penalty_voltage * self.voltage_bias + data.price_loss *
                   self.loss_total * 1e3 + data.price_blackout * self.sum_blackout +
                   data.current_price.tolist(
@@ -217,13 +234,14 @@ class PandapowerTask():
     
         pass
     
-    def cal_blackout(self,data:GridData):
+    def cal_blackout(self,data:GridData,silent=True):
         """
         calculate of outage load
         """
-        print("shed_node = ",self.net.res_load.sort_index())
         blackoutnode=np.setdiff1d(np.arange(0,32),np.nonzero(self.net.res_load.sort_index()["p_mw"].tolist())[0])
-        print("outage_node = ",blackoutnode)
+        if silent==False:
+            print("shed_node = ",self.net.res_load.sort_index())
+            print("outage_node = ",blackoutnode)
         if len(blackoutnode)==0:
             return 0
         else:
@@ -463,11 +481,16 @@ class PandapowerTask():
         # executes the action
         # reward has been calculated
         if debug==True:
-            self.render(data, plot=True,res_print=True,wait_time=5)
+            self.render(data, plot=True,res_print=True,wait_time=10)
         else:
             self.render(data, plot=False)
-        # if number of outage node > 0, game over
-        if  len(np.nonzero(self.net.res_load.sort_index()["p_mw"].tolist())[0])<33:
+        # if number of outage node > 0 or low\hight voltage,  game over
+        # or \
+        # (len(np.where(np.array(list(self.net.res_bus.sort_index()["vm_pu"]))<0.95)[0])>0) or \
+        #     (len(np.where(np.array(list(self.net.res_bus.sort_index()["vm_pu"]))>1.05)[0])>0):
+        if  (len(np.nonzero(self.net.res_load.sort_index()["p_mw"].tolist())[0])<32): 
+            print(self.net.res_bus)
+            print(self.net.res_load)
             flag=True
         # save reward
         save_reward = self.reward
@@ -577,7 +600,32 @@ class PandapowerTask():
 
         pass
 
-
+    def action_mapping(self,action,mode="bounded"):
+        """
+        transform action vector into real action for RL  
+        
+        - in bounded mode:
+            reference = [P]
+            
+        """
+        out=np.zeros(11)
+        if mode=="bounded":
+            for i in range(3):
+                out[i]=(abs(action[i])+1)*1000
+                pass
+            for i in range(3,6):
+                out[i]=(abs(action[i])+1)*500
+                pass
+            
+            out[6:12]=self.action_space[int(action[6]),:]
+            
+            pass
+            
+            
+            
+        return out.astype("int")
+    
+    
 if __name__ == "__main__":
 
     pass

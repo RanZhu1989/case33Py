@@ -1,6 +1,6 @@
 import numpy as np
 import random
-
+import time
 
 class ScenceMaker:
     def __init__(self):
@@ -13,10 +13,11 @@ class ScenceMaker:
         event = np.zeros((12864, 37), dtype=int)
         pass
 
-    def make(self, ns1_pr=0.1, ns2_pr=0.01):
+    def make(self, ns1_pr=0.1, ns2_pr=0.8):
         """
         docstring
         """
+        time=self.make_time()
         # init the event table
         event = np.zeros((12864, 37), dtype=int)
         #
@@ -37,11 +38,27 @@ class ScenceMaker:
             event[row, :] = temp_row
             pass
         # save to file
-        np.savetxt("./out/res_faultmaker/scene_result.csv",
+        np.savetxt("./out/res_faultmaker/"+time+"_scene_result.csv",
                    event, fmt="%i", delimiter=",")
         pass
+    def make_time(self):
+        """
+        return a list about current time
+        """
+        current_time = time.localtime(time.time())
+        y = current_time[0]
+        mon = current_time[1]
+        d = current_time[2]
+        h = current_time[3]
+        m = current_time[4]
+        s = current_time[5]
+        res = str(y)+str(mon)+str(d)+"time"+str(h)+"_"+str(m)+"_"+str(s)
+        return res
+
+    pass
 
 if __name__ == "__main__":
-    a=ScenceMaker()
-    a.make()
+    mk=ScenceMaker()
+    for i in range(500):
+        mk.make()
     pass

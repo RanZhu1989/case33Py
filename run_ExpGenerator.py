@@ -9,9 +9,9 @@ data_case33 = GridData()
 network = PandapowerTask()
 network.init_output()
 # set start step
-start_step= 94
+start_step= 0
 # set end step
-end_step = 98
+end_step = 25
 for s in range(start_step, end_step):
     # gather current data by moving a step
     print("Step = ", s )
